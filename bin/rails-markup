@@ -1,0 +1,61 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../lib/rails_markup"
+
+def print_help
+  $stderr.puts <<~HELP
+    rails-markup — Point-and-click annotation tool for AI agents
+
+    Usage:
+      rails-markup server [OPTIONS]    Start HTTP + MCP server (default)
+      rails-markup mcp                 Start MCP-only server (stdio)
+      rails-markup --help              Show this help
+
+    Options:
+      --port PORT    HTTP server port (default: 4747)
+      --mcp-only     Start MCP server only (no HTTP)
+
+    Examples:
+      rails-markup server              # HTTP on :4747 + MCP on stdio
+      rails-markup server --port 8080  # HTTP on :8080 + MCP on stdio
+      rails-markup mcp                 # MCP only (for Claude Code config)
+  HELP
+end
+
+def parse_args(args)
+  options = { port: 4747, mcp_only: false }
+
+  command = args.shift
+  case command
+  when "mcp"
+    options[:mcp_only] = true
+  when "server", nil
+    # default
+  when "--help", "-h"
+    print_help
+    exit 0
+  else
+    $stderr.puts "Unknown command: #{command}"
+    print_help
+    exit 1
+  end
+
+  while (arg = args.shift)
+    case arg
+    when "--port"
+      options[:port] = args.shift.to_i
+    when "--mcp-only"
+      options[:mcp_only] = true
+    when "--help", "-h"
+      print_help
+      exit 0
+    end
+  end
+
+  options
+end
+
+options = parse_args(ARGV.dup)
+server = RailsMarkup::Server.new(**options)
+server.start
