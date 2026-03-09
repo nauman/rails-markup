@@ -33,6 +33,7 @@
     init(opts = {}) {
       this.endpoint = opts.endpoint || "/feedback/api";
       this.accent = opts.accent || "indigo";
+      this._currentPathname = window.location.pathname;
 
       if (document.getElementById("rm-toolbar-root")) return;
       this._injectStyles();
@@ -50,6 +51,8 @@
       if (this.sseSource) { this.sseSource.close(); this.sseSource = null; }
       if (this.healthInterval) { clearInterval(this.healthInterval); this.healthInterval = null; }
       window.removeEventListener("resize", this._onResize);
+      if (this._boundTurboNavigate) document.removeEventListener("turbo:load", this._boundTurboNavigate);
+      if (this._boundTurboFrame) document.removeEventListener("turbo:frame-render", this._boundTurboFrame);
       const root = document.getElementById("rm-toolbar-root");
       if (root) root.remove();
       const styles = document.getElementById("rm-toolbar-styles");
@@ -217,6 +220,54 @@
       this._boundMouseDown = (e) => self._handleMouseDown(e);
       this._boundMouseUp = (e) => self._handleMouseUp(e);
       this._boundKeyDown = (e) => self._handleKeyDown(e);
+
+      // Turbo Drive — full page navigation, reload annotations for new URL
+      this._boundTurboNavigate = () => self._onTurboNavigate();
+      document.addEventListener("turbo:load", this._boundTurboNavigate);
+      // Turbo Frames — partial DOM update, reposition pins
+      this._boundTurboFrame = () => self._onTurboFrameRender();
+      document.addEventListener("turbo:frame-render", this._boundTurboFrame);
+    },
+
+    // ---- Turbo integration ----
+
+    _currentPathname: null,
+
+    _onTurboNavigate() {
+      const newPath = window.location.pathname;
+      if (newPath === this._currentPathname) return; // same page (anchor change, etc.)
+      this._currentPathname = newPath;
+
+      // Deactivate crosshair mode
+      this._deactivateMode();
+
+      // Close popup
+      const popup = document.getElementById("rm-popup");
+      if (popup && popup.style.display === "block") this._closePopup();
+
+      // Close panel
+      const panel = document.getElementById("rm-panel");
+      if (panel) panel.style.display = "none";
+
+      // Clear pins
+      const pinsContainer = document.getElementById("rm-pins-container");
+      if (pinsContainer) pinsContainer.innerHTML = "";
+
+      // Reset state and reload from storage for new URL
+      this.annotations = [];
+      this.nextId = 1;
+      this._loadFromStorage();
+      this._renderPins();
+      this._updateCount();
+      this._rebuildList();
+
+      // Re-init session for new URL
+      if (this.serverOnline) this._initSession();
+    },
+
+    _onTurboFrameRender() {
+      // Frame content changed — DOM elements may have moved, reposition pins
+      this._repositionPins();
     },
 
     // ---- Mode ----
@@ -686,12 +737,13 @@
         await fetch(this.endpoint + "/sessions/" + (this.sessionId || "local") + "/annotations", {
           method: "POST", headers, credentials: "same-origin",
           body: JSON.stringify({
+            page_url: annotation.pathname,
             content: annotation.comment,
             intent: annotation.intent,
             severity: annotation.severity,
             selected_text: annotation.selectedText || null,
             target: annotation.element || {},
-            metadata: { localId: annotation.id, url: annotation.url, boundingBox: annotation.element?.boundingBox }
+            metadata: { localId: annotation.id, url: annotation.url }
           }),
           signal: AbortSignal.timeout(5000)
         });
