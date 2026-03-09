@@ -4,92 +4,168 @@ require_relative "../../engine_test_helper"
 
 module RailsMarkup
   class AnnotationsControllerTest < ActionDispatch::IntegrationTest
-    setup do
-      @annotation = create_annotation!
-    end
-
     # --- Session ---
 
-    test "create_session returns session id" do
-      post rails_markup.url_for(controller: "rails_markup/annotations", action: "create_session"), params: { url: "/test" }, as: :json
-      assert_response :success
+    test "create_session returns prefixed id" do
+      post sessions_path, params: { url: "/sites/inventlist" }, as: :json
 
-      body = JSON.parse(response.body)
+      assert_response :success
+      body = response.parsed_body
       assert body["id"].start_with?("rm-")
-      assert_equal "/test", body["url"]
+      assert_equal "/sites/inventlist", body["url"]
     end
 
-    # --- Create annotation ---
+    # --- Create ---
 
-    test "create annotation with valid params" do
+    test "create with valid params persists annotation" do
       assert_difference "Annotation.count", 1 do
-        post rails_markup.url_for(controller: "rails_markup/annotations", action: "create", session_id: "test-session"),
-          params: { content: "Fix button", intent: "fix", severity: "important", metadata: { url: "/page" } },
+        post session_annotations_path("test-session"),
+          params: { page_url: "/sites/inventlist", content: "Fix spacing", intent: "fix", severity: "important" },
           as: :json
       end
 
       assert_response :created
-      body = JSON.parse(response.body)
-      assert_equal "Fix button", body["content"]
+      body = response.parsed_body
+      assert_equal "Fix spacing", body["content"]
       assert_equal "fix", body["intent"]
       assert_equal "important", body["severity"]
+      assert_equal "/sites/inventlist", body["pageUrl"]
     end
 
-    test "create annotation with invalid params returns errors" do
-      post rails_markup.url_for(controller: "rails_markup/annotations", action: "create", session_id: "test-session"),
-        params: { content: "", intent: "fix" },
+    test "create sets page_url from param" do
+      post session_annotations_path("test-session"),
+        params: { page_url: "/explicit/path", content: "Test" },
         as: :json
 
+      assert_response :created
+      assert_equal "/explicit/path", Annotation.last.page_url
+    end
+
+    test "create falls back to referer when page_url missing" do
+      post session_annotations_path("test-session"),
+        params: { content: "Test" },
+        headers: { "Referer" => "http://test.host/from-referer" },
+        as: :json
+
+      assert_response :created
+      assert_equal "http://test.host/from-referer", Annotation.last.page_url
+    end
+
+    test "create with empty content returns errors" do
+      assert_no_difference "Annotation.count" do
+        post session_annotations_path("test-session"),
+          params: { content: "" },
+          as: :json
+      end
+
       assert_response :unprocessable_entity
-      body = JSON.parse(response.body)
-      assert body["errors"].any?
+      body = response.parsed_body
+      assert body["errors"].any? { |e| e.include?("Content") }
+    end
+
+    test "create normalizes camelCase selectedText to selected_text" do
+      post session_annotations_path("test-session"),
+        params: { page_url: "/test", content: "Fix", selectedText: "highlighted text" },
+        as: :json
+
+      assert_response :created
+      assert_equal "highlighted text", Annotation.last.selected_text
+    end
+
+    test "create stores target as hash" do
+      post session_annotations_path("test-session"),
+        params: { page_url: "/test", content: "Fix", target: { selector: "div.hero", cssPath: "main > div" } },
+        as: :json
+
+      assert_response :created
+      assert_equal "div.hero", Annotation.last.target["selector"]
     end
 
     # --- Health ---
 
     test "health returns ok" do
-      get rails_markup.url_for(controller: "rails_markup/annotations", action: "health"), as: :json
-      assert_response :success
+      get health_path, as: :json
 
-      body = JSON.parse(response.body)
-      assert body["ok"]
+      assert_response :success
+      assert response.parsed_body["ok"]
     end
 
     # --- Status actions ---
 
-    test "acknowledge annotation" do
-      post rails_markup.url_for(controller: "rails_markup/annotations", action: "acknowledge", id: @annotation.id), as: :json
-      assert_response :success
+    test "acknowledge transitions to acknowledged" do
+      annotation = annotations(:pending_fix)
 
-      body = JSON.parse(response.body)
-      assert_equal "acknowledged", body["status"]
-      assert_equal "acknowledged", @annotation.reload.status
+      post acknowledge_annotation_path(annotation), as: :json
+
+      assert_response :success
+      assert_equal "acknowledged", annotation.reload.status
+      assert_equal "acknowledged", response.parsed_body["status"]
     end
 
-    test "resolve annotation with summary" do
-      post rails_markup.url_for(controller: "rails_markup/annotations", action: "resolve", id: @annotation.id),
-        params: { summary: "Done" }, as: :json
-      assert_response :success
+    test "resolve with summary transitions and adds thread" do
+      annotation = annotations(:pending_fix)
 
-      body = JSON.parse(response.body)
-      assert_equal "resolved", body["status"]
-      assert_equal "resolved", @annotation.reload.status
+      post resolve_annotation_path(annotation),
+        params: { summary: "Fixed padding to 12px" }, as: :json
+
+      assert_response :success
+      annotation.reload
+      assert_equal "resolved", annotation.status
+      assert_equal "Fixed padding to 12px", annotation.thread.last["message"]
     end
 
-    test "dismiss annotation with reason" do
-      post rails_markup.url_for(controller: "rails_markup/annotations", action: "dismiss", id: @annotation.id),
-        params: { reason: "Not needed" }, as: :json
-      assert_response :success
+    test "dismiss with reason transitions and adds thread" do
+      annotation = annotations(:pending_fix)
 
-      assert_equal "dismissed", @annotation.reload.status
+      post dismiss_annotation_path(annotation),
+        params: { reason: "Working as designed" }, as: :json
+
+      assert_response :success
+      assert_equal "dismissed", annotation.reload.status
     end
 
-    test "reply to annotation" do
-      post rails_markup.url_for(controller: "rails_markup/annotations", action: "reply", id: @annotation.id),
+    test "reply adds thread entry without changing status" do
+      annotation = annotations(:pending_fix)
+
+      post reply_annotation_path(annotation),
         params: { message: "Looking into it" }, as: :json
-      assert_response :success
 
-      assert_equal 1, @annotation.reload.thread.size
+      assert_response :success
+      annotation.reload
+      assert_equal "pending", annotation.status
+      assert_equal 1, annotation.thread.size
+      assert_equal "Looking into it", annotation.thread.last["message"]
+    end
+
+    private
+
+    # Named route helpers for the engine's API endpoints
+    def sessions_path
+      rails_markup.url_for(controller: "rails_markup/annotations", action: "create_session", only_path: true)
+    end
+
+    def session_annotations_path(session_id)
+      rails_markup.url_for(controller: "rails_markup/annotations", action: "create", session_id: session_id, only_path: true)
+    end
+
+    def health_path
+      rails_markup.url_for(controller: "rails_markup/annotations", action: "health", only_path: true)
+    end
+
+    def acknowledge_annotation_path(annotation)
+      rails_markup.url_for(controller: "rails_markup/annotations", action: "acknowledge", id: annotation.id, only_path: true)
+    end
+
+    def resolve_annotation_path(annotation)
+      rails_markup.url_for(controller: "rails_markup/annotations", action: "resolve", id: annotation.id, only_path: true)
+    end
+
+    def dismiss_annotation_path(annotation)
+      rails_markup.url_for(controller: "rails_markup/annotations", action: "dismiss", id: annotation.id, only_path: true)
+    end
+
+    def reply_annotation_path(annotation)
+      rails_markup.url_for(controller: "rails_markup/annotations", action: "reply", id: annotation.id, only_path: true)
     end
   end
 end

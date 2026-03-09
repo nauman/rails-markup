@@ -7,35 +7,34 @@ module RailsMarkup
     # --- Validations ---
 
     test "valid with all required attributes" do
-      annotation = create_annotation!
-      assert annotation.persisted?
+      assert annotations(:pending_fix).valid?
     end
 
-    test "requires content" do
-      annotation = Annotation.new(page_url: "/test", content: nil)
+    test "invalid without content" do
+      annotation = Annotation.new(page_url: "/test")
       assert_not annotation.valid?
       assert_includes annotation.errors[:content], "can't be blank"
     end
 
-    test "requires page_url" do
-      annotation = Annotation.new(content: "Fix this", page_url: nil)
+    test "invalid without page_url" do
+      annotation = Annotation.new(content: "Fix this")
       assert_not annotation.valid?
       assert_includes annotation.errors[:page_url], "can't be blank"
     end
 
-    test "validates intent inclusion" do
+    test "invalid with unknown intent" do
       annotation = Annotation.new(content: "Fix", page_url: "/test", intent: "invalid")
       assert_not annotation.valid?
       assert_includes annotation.errors[:intent], "is not included in the list"
     end
 
-    test "validates severity inclusion" do
+    test "invalid with unknown severity" do
       annotation = Annotation.new(content: "Fix", page_url: "/test", severity: "invalid")
       assert_not annotation.valid?
       assert_includes annotation.errors[:severity], "is not included in the list"
     end
 
-    test "validates status inclusion" do
+    test "invalid with unknown status" do
       annotation = Annotation.new(content: "Fix", page_url: "/test", status: "invalid")
       assert_not annotation.valid?
       assert_includes annotation.errors[:status], "is not included in the list"
@@ -43,202 +42,252 @@ module RailsMarkup
 
     test "accepts all valid intents" do
       Annotation::INTENTS.each do |intent|
-        annotation = create_annotation!(intent: intent)
-        assert annotation.persisted?, "Expected intent '#{intent}' to be valid"
+        annotation = Annotation.new(content: "Test", page_url: "/test", intent: intent)
+        assert annotation.valid?, "Expected intent '#{intent}' to be valid"
       end
     end
 
     test "accepts all valid severities" do
       Annotation::SEVERITIES.each do |severity|
-        annotation = create_annotation!(severity: severity)
-        assert annotation.persisted?, "Expected severity '#{severity}' to be valid"
+        annotation = Annotation.new(content: "Test", page_url: "/test", severity: severity)
+        assert annotation.valid?, "Expected severity '#{severity}' to be valid"
       end
     end
 
     test "accepts all valid statuses" do
       Annotation::STATUSES.each do |status|
-        annotation = create_annotation!(status: status)
-        assert annotation.persisted?, "Expected status '#{status}' to be valid"
+        annotation = Annotation.new(content: "Test", page_url: "/test", status: status)
+        assert annotation.valid?, "Expected status '#{status}' to be valid"
       end
     end
 
     # --- Defaults ---
 
     test "defaults intent to change" do
-      annotation = Annotation.new
-      assert_equal "change", annotation.intent
+      assert_equal "change", Annotation.new.intent
     end
 
     test "defaults severity to suggestion" do
-      annotation = Annotation.new
-      assert_equal "suggestion", annotation.severity
+      assert_equal "suggestion", Annotation.new.severity
     end
 
     test "defaults status to pending" do
-      annotation = Annotation.new
-      assert_equal "pending", annotation.status
+      assert_equal "pending", Annotation.new.status
+    end
+
+    test "defaults thread to empty array" do
+      assert_equal [], Annotation.new.thread
+    end
+
+    test "defaults target to empty hash" do
+      assert_equal({}, Annotation.new.target)
+    end
+
+    test "defaults metadata to empty hash" do
+      assert_equal({}, Annotation.new.metadata)
     end
 
     # --- Scopes ---
 
-    test "pending scope returns only pending" do
-      pending = create_annotation!(status: "pending")
-      create_annotation!(status: "resolved")
+    test "pending scope returns only pending annotations" do
+      results = Annotation.pending
 
-      assert_includes Annotation.pending, pending
-      assert_equal 1, Annotation.pending.count
+      assert_includes results, annotations(:pending_fix)
+      assert_includes results, annotations(:other_page_pending)
+      assert_not_includes results, annotations(:resolved_fix)
+      assert_not_includes results, annotations(:dismissed_question)
     end
 
-    test "acknowledged scope" do
-      ack = create_annotation!(status: "acknowledged")
-      create_annotation!(status: "pending")
+    test "acknowledged scope returns only acknowledged annotations" do
+      results = Annotation.acknowledged
 
-      assert_includes Annotation.acknowledged, ack
-      assert_equal 1, Annotation.acknowledged.count
+      assert_includes results, annotations(:acknowledged_change)
+      assert_not_includes results, annotations(:pending_fix)
     end
 
-    test "resolved scope" do
-      resolved = create_annotation!(status: "resolved")
-      create_annotation!(status: "pending")
+    test "resolved scope returns only resolved annotations" do
+      results = Annotation.resolved
 
-      assert_includes Annotation.resolved, resolved
-      assert_equal 1, Annotation.resolved.count
+      assert_includes results, annotations(:resolved_fix)
+      assert_not_includes results, annotations(:pending_fix)
     end
 
-    test "dismissed scope" do
-      dismissed = create_annotation!(status: "dismissed")
-      create_annotation!(status: "pending")
+    test "dismissed scope returns only dismissed annotations" do
+      results = Annotation.dismissed
 
-      assert_includes Annotation.dismissed, dismissed
-      assert_equal 1, Annotation.dismissed.count
+      assert_includes results, annotations(:dismissed_question)
+      assert_not_includes results, annotations(:pending_fix)
     end
 
     test "active scope returns pending and acknowledged" do
-      pending = create_annotation!(status: "pending")
-      ack = create_annotation!(status: "acknowledged")
-      create_annotation!(status: "resolved")
-      create_annotation!(status: "dismissed")
+      results = Annotation.active
 
-      active = Annotation.active
-      assert_includes active, pending
-      assert_includes active, ack
-      assert_equal 2, active.count
+      assert_includes results, annotations(:pending_fix)
+      assert_includes results, annotations(:acknowledged_change)
+      assert_includes results, annotations(:other_page_pending)
+      assert_not_includes results, annotations(:resolved_fix)
+      assert_not_includes results, annotations(:dismissed_question)
     end
 
-    test "for_page scope filters by page_url" do
-      on_page = create_annotation!(page_url: "/specific/page")
-      create_annotation!(page_url: "/other/page")
+    test "for_page scope filters by exact page_url" do
+      results = Annotation.for_page("/sites/inventlist")
 
-      results = Annotation.for_page("/specific/page")
-      assert_includes results, on_page
-      assert_equal 1, results.count
+      assert_includes results, annotations(:pending_fix)
+      assert_includes results, annotations(:acknowledged_change)
+      assert_not_includes results, annotations(:other_page_pending)
     end
 
-    test "recent scope orders by created_at desc" do
-      old = create_annotation!
-      old.update_column(:created_at, 1.day.ago)
-      new_ann = create_annotation!
+    test "recent scope orders newest first" do
+      results = Annotation.recent
 
-      assert_equal new_ann, Annotation.recent.first
+      results.each_cons(2) do |newer, older|
+        assert newer.created_at >= older.created_at,
+          "Expected #{newer.created_at} >= #{older.created_at}"
+      end
+    end
+
+    test "scopes compose — active on specific page" do
+      results = Annotation.active.for_page("/sites/inventlist")
+
+      assert_includes results, annotations(:pending_fix)
+      assert_includes results, annotations(:acknowledged_change)
+      assert_not_includes results, annotations(:other_page_pending)
+      assert_not_includes results, annotations(:resolved_fix)
     end
 
     # --- Status transitions ---
 
-    test "acknowledge! sets status to acknowledged" do
-      annotation = create_annotation!(status: "pending")
+    test "acknowledge! transitions to acknowledged" do
+      annotation = annotations(:pending_fix)
       annotation.acknowledge!
 
       assert_equal "acknowledged", annotation.reload.status
     end
 
-    test "resolve! sets status to resolved" do
-      annotation = create_annotation!(status: "pending")
+    test "resolve! transitions to resolved" do
+      annotation = annotations(:pending_fix)
       annotation.resolve!
 
       assert_equal "resolved", annotation.reload.status
     end
 
     test "resolve! with summary adds thread entry" do
-      annotation = create_annotation!(status: "pending")
-      annotation.resolve!(summary: "Fixed the padding")
+      annotation = annotations(:acknowledged_change)
+      annotation.resolve!(summary: "Bumped to 48px")
 
-      assert_equal "resolved", annotation.reload.status
+      annotation.reload
+      assert_equal "resolved", annotation.status
       assert_equal 1, annotation.thread.size
-      assert_equal "agent", annotation.thread.last["role"]
-      assert_equal "Fixed the padding", annotation.thread.last["message"]
+
+      entry = annotation.thread.last
+      assert_equal "agent", entry["role"]
+      assert_equal "Bumped to 48px", entry["message"]
+      assert entry["timestamp"].present?
     end
 
-    test "resolve! without summary does not add thread entry" do
-      annotation = create_annotation!(status: "pending")
+    test "resolve! without summary skips thread entry" do
+      annotation = annotations(:pending_fix)
       annotation.resolve!
 
       assert_equal "resolved", annotation.reload.status
       assert_empty annotation.thread
     end
 
-    test "dismiss! sets status to dismissed" do
-      annotation = create_annotation!(status: "pending")
+    test "dismiss! transitions to dismissed" do
+      annotation = annotations(:pending_fix)
       annotation.dismiss!
 
       assert_equal "dismissed", annotation.reload.status
     end
 
     test "dismiss! with reason adds thread entry" do
-      annotation = create_annotation!(status: "pending")
-      annotation.dismiss!(reason: "Not actionable")
+      annotation = annotations(:pending_fix)
+      annotation.dismiss!(reason: "Working as designed")
 
-      assert_equal "dismissed", annotation.reload.status
+      annotation.reload
+      assert_equal "dismissed", annotation.status
       assert_equal 1, annotation.thread.size
-      assert_equal "Not actionable", annotation.thread.last["message"]
+      assert_equal "Working as designed", annotation.thread.last["message"]
+    end
+
+    test "dismiss! without reason skips thread entry" do
+      annotation = annotations(:pending_fix)
+      annotation.dismiss!
+
+      assert_empty annotation.reload.thread
     end
 
     # --- Thread management ---
 
-    test "add_reply! appends to thread" do
-      annotation = create_annotation!
-      annotation.add_reply!(message: "Working on it", role: "agent")
+    test "add_reply! appends entry to thread" do
+      annotation = annotations(:pending_fix)
+      annotation.add_reply!(message: "Looking into it", role: "agent")
 
-      assert_equal 1, annotation.reload.thread.size
+      annotation.reload
+      assert_equal 1, annotation.thread.size
+
       entry = annotation.thread.last
       assert_equal "agent", entry["role"]
-      assert_equal "Working on it", entry["message"]
+      assert_equal "Looking into it", entry["message"]
       assert entry["timestamp"].present?
     end
 
-    test "add_reply! preserves existing thread entries" do
-      annotation = create_annotation!
-      annotation.add_reply!(message: "First reply", role: "agent")
-      annotation.add_reply!(message: "Second reply", role: "user")
+    test "add_reply! preserves existing entries" do
+      annotation = annotations(:resolved_fix)
+      existing_count = annotation.thread.size
 
-      assert_equal 2, annotation.reload.thread.size
-      assert_equal "First reply", annotation.thread.first["message"]
-      assert_equal "Second reply", annotation.thread.last["message"]
+      annotation.add_reply!(message: "Follow-up note", role: "user")
+
+      assert_equal existing_count + 1, annotation.reload.thread.size
+      assert_equal "Follow-up note", annotation.thread.last["message"]
     end
 
     test "add_reply! defaults role to agent" do
-      annotation = create_annotation!
-      annotation.add_reply!(message: "Hello")
+      annotation = annotations(:pending_fix)
+      annotation.add_reply!(message: "On it")
 
       assert_equal "agent", annotation.reload.thread.last["role"]
     end
 
+    test "multiple replies build conversation" do
+      annotation = annotations(:pending_fix)
+      annotation.add_reply!(message: "Looking into it", role: "agent")
+      annotation.add_reply!(message: "Any update?", role: "user")
+      annotation.add_reply!(message: "Fixed in latest deploy", role: "agent")
+
+      assert_equal 3, annotation.reload.thread.size
+      assert_equal %w[agent user agent], annotation.thread.map { |e| e["role"] }
+    end
+
     # --- Serialization ---
 
-    test "as_api_json returns camelCase hash" do
-      annotation = create_annotation!(
-        selected_text: "some text",
-        page_url: "/test/page"
-      )
-      json = annotation.as_api_json
+    test "as_api_json returns camelCase keys" do
+      json = annotations(:pending_fix).as_api_json
 
-      assert_equal annotation.id.to_s, json[:id]
-      assert_equal "Fix this element", json[:content]
-      assert_equal "change", json[:intent]
-      assert_equal "suggestion", json[:severity]
+      assert_equal annotations(:pending_fix).id.to_s, json[:id]
+      assert_equal "Button padding is off on mobile — needs 12px instead of 8px", json[:content]
+      assert_equal "fix", json[:intent]
+      assert_equal "important", json[:severity]
       assert_equal "pending", json[:status]
-      assert_equal "some text", json[:selectedText]
-      assert_equal "/test/page", json[:pageUrl]
+      assert_equal "Get Started", json[:selectedText]
+      assert_equal "/sites/inventlist", json[:pageUrl]
       assert json[:createdAt].present?
+      assert json[:updatedAt].present?
+    end
+
+    test "as_api_json includes target and metadata" do
+      json = annotations(:pending_fix).as_api_json
+
+      assert json[:target].is_a?(Hash)
+      assert json[:metadata].is_a?(Hash)
+      assert json[:thread].is_a?(Array)
+    end
+
+    test "as_api_json includes thread entries for resolved annotation" do
+      json = annotations(:resolved_fix).as_api_json
+
+      assert json[:thread].size >= 1
+      assert_equal "agent", json[:thread].first["role"]
     end
   end
 end

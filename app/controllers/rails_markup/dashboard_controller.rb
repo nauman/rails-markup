@@ -3,21 +3,16 @@
 module RailsMarkup
   class DashboardController < ApplicationController
     before_action :authorize!
+    before_action :set_annotation, only: %i[show update]
 
     # GET /feedback
     def index
-      annotations = Annotation.recent
+      scope = Annotation.recent
+      scope = scope.where(status: params[:status]) if params[:status].present? && params[:status] != "all"
+      scope = scope.for_page(params[:page_url]) if params[:page_url].present?
 
-      if params[:status].present? && params[:status] != "all"
-        annotations = annotations.where(status: params[:status])
-      end
-
-      if params[:page_url].present?
-        annotations = annotations.for_page(params[:page_url])
-      end
-
-      @annotations = annotations.limit(RailsMarkup.config.per_page)
-        .offset(page_offset)
+      @current_page = (params[:page] || 1).to_i
+      @annotations = scope.limit(per_page).offset((@current_page - 1) * per_page)
 
       @total_count = Annotation.count
       @pending_count = Annotation.pending.count
@@ -27,27 +22,19 @@ module RailsMarkup
       @page_urls = Annotation.distinct.pluck(:page_url).sort
       @current_status = params[:status] || "all"
       @current_page_url = params[:page_url]
-      @current_page = (params[:page] || 1).to_i
     end
 
     # GET /feedback/annotations/:id
     def show
-      @annotation = Annotation.find(params[:id])
     end
 
     # PATCH /feedback/annotations/:id
     def update
-      @annotation = Annotation.find(params[:id])
-
       case params[:action_type]
-      when "acknowledge"
-        @annotation.acknowledge!
-      when "resolve"
-        @annotation.resolve!(summary: params[:summary].presence)
-      when "dismiss"
-        @annotation.dismiss!(reason: params[:reason].presence)
-      when "reply"
-        @annotation.add_reply!(message: params[:message], role: params[:role] || "agent")
+      when "acknowledge" then @annotation.acknowledge!
+      when "resolve"     then @annotation.resolve!(summary: params[:summary].presence)
+      when "dismiss"     then @annotation.dismiss!(reason: params[:reason].presence)
+      when "reply"       then @annotation.add_reply!(message: params[:message], role: params[:role] || "agent")
       end
 
       redirect_to annotation_path(@annotation), notice: "Annotation updated."
@@ -55,8 +42,12 @@ module RailsMarkup
 
     private
 
-    def page_offset
-      ((params[:page] || 1).to_i - 1) * RailsMarkup.config.per_page
+    def set_annotation
+      @annotation = Annotation.find(params[:id])
+    end
+
+    def per_page
+      RailsMarkup.config.per_page
     end
   end
 end

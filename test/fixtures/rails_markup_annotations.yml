@@ -1,0 +1,67 @@
+# Fixtures for RailsMarkup::Annotation
+# Table: rails_markup_annotations
+
+pending_fix:
+  page_url: /sites/inventlist
+  content: Button padding is off on mobile — needs 12px instead of 8px
+  intent: fix
+  severity: important
+  status: pending
+  selected_text: Get Started
+  target: '{"selector": "button.btn-primary", "cssPath": "main > section > button:nth-of-type(1)", "boundingBox": {"top": 400, "left": 120, "width": 200, "height": 48}}'
+  metadata: '{}'
+  thread: '[]'
+  created_at: <%= 2.hours.ago.iso8601 %>
+  updated_at: <%= 2.hours.ago.iso8601 %>
+
+acknowledged_change:
+  page_url: /sites/inventlist
+  content: Font size on hero heading should be 48px for desktop
+  intent: change
+  severity: suggestion
+  status: acknowledged
+  selected_text: Build in public
+  target: '{"selector": "h1.hero-title", "cssPath": "main > section > h1"}'
+  metadata: '{}'
+  thread: '[]'
+  created_at: <%= 1.day.ago.iso8601 %>
+  updated_at: <%= 12.hours.ago.iso8601 %>
+
+resolved_fix:
+  page_url: /users/nauman
+  content: Avatar image stretched on narrow viewports
+  intent: fix
+  severity: blocking
+  status: resolved
+  selected_text:
+  target: '{"selector": "img.avatar", "cssPath": "div.profile > img"}'
+  metadata: '{}'
+  thread: '[{"role": "agent", "message": "Added object-fit: cover to avatar", "timestamp": "<%= 6.hours.ago.iso8601 %>"}]'
+  created_at: <%= 3.days.ago.iso8601 %>
+  updated_at: <%= 6.hours.ago.iso8601 %>
+
+dismissed_question:
+  page_url: /sites/inventlist/updates
+  content: Should we add dark mode to the ship timeline?
+  intent: question
+  severity: suggestion
+  status: dismissed
+  selected_text:
+  target: '{"selector": "div.timeline"}'
+  metadata: '{}'
+  thread: '[{"role": "agent", "message": "Deferred to backlog — not in current scope", "timestamp": "<%= 1.day.ago.iso8601 %>"}]'
+  created_at: <%= 5.days.ago.iso8601 %>
+  updated_at: <%= 1.day.ago.iso8601 %>
+
+other_page_pending:
+  page_url: /tools/rails-markup
+  content: Install command should use gem install not bundle add
+  intent: change
+  severity: suggestion
+  status: pending
+  selected_text: bundle add rails-markup
+  target: '{"selector": "code.install-cmd"}'
+  metadata: '{}'
+  thread: '[]'
+  created_at: <%= 30.minutes.ago.iso8601 %>
+  updated_at: <%= 30.minutes.ago.iso8601 %>
