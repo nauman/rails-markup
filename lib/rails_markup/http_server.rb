@@ -19,13 +19,14 @@ module RailsMarkup
       @server = WEBrick::HTTPServer.new(
         Port: @port,
         Logger: @logger,
-        AccessLog: []
+        AccessLog: [],
+        DoNotReverseLookup: true
       )
 
-      mount_routes
+      @server.mount("/", CorsServlet, @store)
 
-      trap("INT")  { @server.shutdown }
-      trap("TERM") { @server.shutdown }
+      trap("INT")  { exit! }
+      trap("TERM") { exit! }
 
       @server.start
     end
@@ -33,85 +34,126 @@ module RailsMarkup
     def shutdown
       @server&.shutdown
     end
+  end
+
+  # Single servlet handling all routes with proper CORS support.
+  # WEBrick dispatches do_GET, do_POST, do_OPTIONS to us directly.
+  class CorsServlet < WEBrick::HTTPServlet::AbstractServlet
+    def initialize(server, store)
+      super(server)
+      @store = store
+    end
+
+    def do_OPTIONS(req, res)
+      cors(res)
+      res.status = 204
+    end
+
+    def do_GET(req, res)
+      cors(res)
+      route(req, res)
+    end
+
+    def do_POST(req, res)
+      cors(res)
+      route(req, res)
+    end
 
     private
 
-    def mount_routes
-      @server.mount_proc("/health")           { |_req, res| handle_health(res) }
-      @server.mount_proc("/sessions")         { |req, res| handle_sessions(req, res) }
-      @server.mount_proc("/pending")          { |_req, res| handle_all_pending(res) }
+    def route(req, res)
+      case req.path
+      when "/health"
+        json_response(res, { ok: true })
+
+      when "/pending"
+        pending = @store.all_pending
+        json_response(res, pending.map { |a| @store.serialize_annotation(a) })
+
+      when "/sessions"
+        if req.request_method == "GET"
+          sessions = @store.list_sessions
+          json_response(res, sessions.map { |s| @store.serialize_session(s) })
+        else
+          handle_create_session(req, res)
+        end
+
+      when %r{\A/sessions/([^/]+)/annotations\z}
+        handle_create_annotation(req, res, $1)
+
+      when %r{\A/sessions/([^/]+)/events\z}
+        handle_sse(req, res, $1)
+
+      when %r{\A/sessions/([^/]+)\z}
+        handle_get_session(res, $1)
+
+      when %r{\A/annotations/([^/]+)/resolve\z}
+        handle_annotation_action(req, res, $1, :resolve)
+
+      when %r{\A/annotations/([^/]+)/dismiss\z}
+        handle_annotation_action(req, res, $1, :dismiss)
+
+      when %r{\A/annotations/([^/]+)/acknowledge\z}
+        handle_annotation_action(req, res, $1, :acknowledge)
+
+      when %r{\A/annotations/([^/]+)/reply\z}
+        handle_annotation_action(req, res, $1, :reply)
+
+      else
+        not_found(res)
+      end
     end
 
-    # --- Health ---
+    # --- Annotation actions ---
 
-    def handle_health(res)
-      cors(res)
-      json_response(res, { ok: true })
+    def handle_annotation_action(req, res, annotation_id, action)
+      body = parse_json(req)
+      result = case action
+               when :resolve
+                 @store.resolve(annotation_id, summary: body["summary"])
+               when :dismiss
+                 @store.dismiss(annotation_id, reason: body["reason"])
+               when :acknowledge
+                 @store.acknowledge(annotation_id)
+               when :reply
+                 @store.reply(annotation_id, message: body["message"])
+               end
+      return not_found(res) unless result
+
+      json_response(res, @store.serialize_annotation(result))
     end
 
     # --- Sessions ---
 
-    def handle_sessions(req, res)
-      cors(res)
-      path = req.path
-
-      # POST /sessions — create session
-      if req.request_method == "POST" && path == "/sessions"
-        body = parse_json(req)
-        session = @store.create_session(url: body["url"], metadata: body["metadata"])
-        json_response(res, @store.serialize_session(session), status: 201)
-        return
-      end
-
-      # GET /sessions/:id — get session
-      if req.request_method == "GET" && (match = path.match(%r{\A/sessions/([^/]+)\z}))
-        session = @store.get_session(match[1])
-        return not_found(res) unless session
-
-        json_response(res, @store.serialize_session(session))
-        return
-      end
-
-      # POST /sessions/:id/annotations — create annotation
-      if req.request_method == "POST" && (match = path.match(%r{\A/sessions/([^/]+)/annotations\z}))
-        body = parse_json(req)
-        annotation = @store.create_annotation(
-          session_id: match[1],
-          target: body["target"],
-          content: body["content"],
-          intent: body["intent"] || "change",
-          severity: body["severity"] || "suggestion",
-          selected_text: body["selectedText"],
-          metadata: body["metadata"]
-        )
-        return not_found(res) unless annotation
-
-        json_response(res, @store.serialize_annotation(annotation), status: 201)
-        return
-      end
-
-      # GET /sessions/:id/events — SSE stream
-      if req.request_method == "GET" && (match = path.match(%r{\A/sessions/([^/]+)/events\z}))
-        handle_sse(req, res, match[1])
-        return
-      end
-
-      # OPTIONS preflight
-      if req.request_method == "OPTIONS"
-        cors(res)
-        res.status = 204
-        return
-      end
-
-      not_found(res)
+    def handle_create_session(req, res)
+      body = parse_json(req)
+      session = @store.create_session(url: body["url"], metadata: body["metadata"])
+      json_response(res, @store.serialize_session(session), status: 201)
     end
 
-    # --- All pending ---
+    def handle_get_session(res, session_id)
+      session = @store.get_session(session_id)
+      return not_found(res) unless session
 
-    def handle_all_pending(res)
-      cors(res)
-      pending = @store.all_pending
-      json_response(res, pending.map { |a| @store.serialize_annotation(a) })
+      json_response(res, @store.serialize_session(session))
+    end
+
+    # --- Annotations ---
+
+    def handle_create_annotation(req, res, session_id)
+      body = parse_json(req)
+      annotation = @store.create_annotation(
+        session_id: session_id,
+        target: body["target"],
+        content: body["content"],
+        intent: body["intent"] || "change",
+        severity: body["severity"] || "suggestion",
+        selected_text: body["selectedText"],
+        metadata: body["metadata"]
+      )
+      return not_found(res) unless annotation
+
+      json_response(res, @store.serialize_annotation(annotation), status: 201)
     end
 
     # --- SSE ---
@@ -135,7 +177,6 @@ module RailsMarkup
           @store.unsubscribe(sub)
         end
 
-        # Keep alive — send comment every 15 seconds
         loop do
           sleep 15
           out.write(": keepalive\n\n")

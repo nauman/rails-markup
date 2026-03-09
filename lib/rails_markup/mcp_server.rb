@@ -1,10 +1,13 @@
 # frozen_string_literal: true
 
 require "json"
+require "net/http"
+require "uri"
 
 module RailsMarkup
   # MCP (Model Context Protocol) server speaking JSON-RPC 2.0 over stdio.
-  # Exposes 9 tools for AI agents to read and act on browser annotations.
+  # Exposes 13 tools for AI agents to read and act on browser annotations
+  # (9 local dev tools + 4 production feedback tools).
   class McpServer
     TOOLS = [
       {
@@ -92,6 +95,62 @@ module RailsMarkup
           },
           required: ["annotationId", "message"]
         }
+      },
+      # -- Production feedback tools --
+      {
+        name: "rails_markup_fetch_production",
+        description: "Fetch all pending annotations from the production app. Returns annotations submitted via the admin feedback toolbar.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            baseUrl: { type: "string", description: "Production base URL (default: env RAILS_MARKUP_PROD_URL)" },
+            token: { type: "string", description: "Internal API token (default: env RAILS_MARKUP_PROD_TOKEN)" },
+            markAcknowledged: { type: "boolean", description: "Acknowledge each annotation after fetching (default: true)" }
+          },
+          required: []
+        }
+      },
+      {
+        name: "rails_markup_resolve_production",
+        description: "Resolve a production annotation with a summary of what was fixed",
+        inputSchema: {
+          type: "object",
+          properties: {
+            annotationId: { type: "string", description: "The annotation ID" },
+            summary: { type: "string", description: "Summary of how it was resolved" },
+            baseUrl: { type: "string", description: "Production base URL (default: env RAILS_MARKUP_PROD_URL)" },
+            token: { type: "string", description: "Internal API token (default: env RAILS_MARKUP_PROD_TOKEN)" }
+          },
+          required: ["annotationId"]
+        }
+      },
+      {
+        name: "rails_markup_dismiss_production",
+        description: "Dismiss a production annotation with a reason",
+        inputSchema: {
+          type: "object",
+          properties: {
+            annotationId: { type: "string", description: "The annotation ID" },
+            reason: { type: "string", description: "Reason for dismissing" },
+            baseUrl: { type: "string", description: "Production base URL (default: env RAILS_MARKUP_PROD_URL)" },
+            token: { type: "string", description: "Internal API token (default: env RAILS_MARKUP_PROD_TOKEN)" }
+          },
+          required: ["annotationId"]
+        }
+      },
+      {
+        name: "rails_markup_reply_production",
+        description: "Reply to a production annotation thread",
+        inputSchema: {
+          type: "object",
+          properties: {
+            annotationId: { type: "string", description: "The annotation ID" },
+            message: { type: "string", description: "The reply message" },
+            baseUrl: { type: "string", description: "Production base URL (default: env RAILS_MARKUP_PROD_URL)" },
+            token: { type: "string", description: "Internal API token (default: env RAILS_MARKUP_PROD_TOKEN)" }
+          },
+          required: ["annotationId", "message"]
+        }
       }
     ].freeze
 
@@ -169,12 +228,93 @@ module RailsMarkup
                when "rails_markup_reply"
                  ann = @store.reply(args["annotationId"], message: args["message"])
                  ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
+               when "rails_markup_fetch_production"
+                 handle_fetch_production(args)
+               when "rails_markup_resolve_production"
+                 handle_production_action(args, "resolve", summary: args["summary"])
+               when "rails_markup_dismiss_production"
+                 handle_production_action(args, "dismiss", reason: args["reason"])
+               when "rails_markup_reply_production"
+                 handle_production_action(args, "reply", message: args["message"])
                else
                  return error_response(id, -32602, "Unknown tool: #{name}")
                end
 
       content = [{ type: "text", text: result.to_json }]
       result_response(id, { content: content })
+    end
+
+    # -- Production API helpers --
+
+    def prod_base_url(args)
+      args["baseUrl"] || ENV["RAILS_MARKUP_PROD_URL"]
+    end
+
+    def prod_token(args)
+      args["token"] || ENV["RAILS_MARKUP_PROD_TOKEN"]
+    end
+
+    def handle_fetch_production(args)
+      base = prod_base_url(args)
+      token = prod_token(args)
+      return { error: "No base URL. Set RAILS_MARKUP_PROD_URL env var or pass baseUrl param." } unless base
+      return { error: "No token. Set RAILS_MARKUP_PROD_TOKEN env var or pass token param." } unless token
+
+      mark_acknowledged = args["markAcknowledged"] != false
+
+      resp = prod_get("#{base}/internal/annotations/pending", token)
+      return { error: "API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
+
+      data = JSON.parse(resp.body)
+      annotations = data["annotations"] || []
+
+      if mark_acknowledged && annotations.any?
+        annotations.each do |ann|
+          prod_patch("#{base}/internal/annotations/#{ann["id"]}/acknowledge", token)
+        end
+      end
+
+      { count: annotations.size, annotations: annotations }
+    end
+
+    def handle_production_action(args, action, **params)
+      base = prod_base_url(args)
+      token = prod_token(args)
+      annotation_id = args["annotationId"]
+      return { error: "No base URL. Set RAILS_MARKUP_PROD_URL env var or pass baseUrl param." } unless base
+      return { error: "No token. Set RAILS_MARKUP_PROD_TOKEN env var or pass token param." } unless token
+      return { error: "No annotationId provided." } unless annotation_id
+
+      resp = prod_patch("#{base}/internal/annotations/#{annotation_id}/#{action}", token, params)
+      return { error: "API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
+
+      JSON.parse(resp.body)
+    end
+
+    def prod_get(url, token)
+      uri = URI.parse(url)
+      req = Net::HTTP::Get.new(uri)
+      req["Authorization"] = "Bearer #{token}"
+      req["Accept"] = "application/json"
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = uri.scheme == "https"
+      http.open_timeout = 10
+      http.read_timeout = 15
+      http.request(req)
+    end
+
+    def prod_patch(url, token, params = {})
+      uri = URI.parse(url)
+      req = Net::HTTP::Patch.new(uri)
+      req["Authorization"] = "Bearer #{token}"
+      req["Content-Type"] = "application/json"
+      req["Accept"] = "application/json"
+      req.body = params.to_json unless params.empty?
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = uri.scheme == "https"
+      http.open_timeout = 10
+      http.read_timeout = 15
+      http.request(req)
     end
 
     def handle_watch(args)

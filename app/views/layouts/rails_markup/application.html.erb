@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= content_for?(:title) ? "#{yield(:title)} — Rails Markup" : "Rails Markup" %></title>
+  <style>
+    /* Reset */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f8f9fa; color: #1a1a2e; line-height: 1.5; }
+    a { color: #4361ee; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Layout */
+    .rm-header { background: #1a1a2e; color: #fff; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; }
+    .rm-header h1 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+    .rm-header h1 span { color: #818cf8; }
+    .rm-header nav { display: flex; gap: 16px; font-size: 13px; }
+    .rm-header nav a { color: #a5b4fc; }
+    .rm-header nav a:hover { color: #fff; text-decoration: none; }
+    .rm-container { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+
+    /* Flash */
+    .rm-flash { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; }
+    .rm-flash-notice { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .rm-flash-alert { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+
+    /* Stats bar */
+    .rm-stats { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+    .rm-stat { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px 20px; flex: 1; min-width: 120px; }
+    .rm-stat-value { font-size: 28px; font-weight: 700; line-height: 1; }
+    .rm-stat-label { font-size: 12px; color: #6b7280; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* Filters */
+    .rm-filters { display: flex; gap: 8px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
+    .rm-pill { display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid #e5e7eb; background: #fff; color: #6b7280; transition: all 0.15s; }
+    .rm-pill:hover { border-color: #818cf8; color: #4361ee; text-decoration: none; }
+    .rm-pill-active { background: #4361ee; color: #fff; border-color: #4361ee; }
+    .rm-pill-active:hover { background: #3730a3; color: #fff; }
+    .rm-select { padding: 6px 12px; border-radius: 8px; border: 1px solid #e5e7eb; font-size: 12px; background: #fff; color: #374151; cursor: pointer; max-width: 240px; }
+
+    /* Cards */
+    .rm-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px 20px; margin-bottom: 10px; transition: border-color 0.15s; position: relative; }
+    .rm-card:hover { border-color: #818cf8; }
+    .rm-card-link { display: block; color: inherit; }
+    .rm-card-link:hover { text-decoration: none; }
+    .rm-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .rm-card-content { font-size: 14px; color: #374151; line-height: 1.6; }
+    .rm-card-meta { display: flex; align-items: center; gap: 12px; margin-top: 10px; font-size: 11px; color: #9ca3af; }
+    .rm-card-meta code { font-size: 11px; background: #f3f4f6; padding: 2px 6px; border-radius: 4px; color: #6b7280; }
+
+    /* Badges */
+    .rm-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; text-transform: capitalize; }
+    .rm-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .rm-status-pending { background: #fef3c7; color: #92400e; }
+    .rm-status-acknowledged { background: #dbeafe; color: #1e40af; }
+    .rm-status-resolved { background: #d1fae5; color: #065f46; }
+    .rm-status-dismissed { background: #f3f4f6; color: #6b7280; }
+    .rm-dot-pending { background: #f59e0b; }
+    .rm-dot-acknowledged { background: #3b82f6; }
+    .rm-dot-resolved { background: #10b981; }
+    .rm-dot-dismissed { background: #9ca3af; }
+    .rm-intent-fix { background: #fef2f2; color: #991b1b; }
+    .rm-intent-change { background: #eff6ff; color: #1e40af; }
+    .rm-intent-question { background: #f5f3ff; color: #5b21b6; }
+    .rm-intent-approve { background: #ecfdf5; color: #065f46; }
+    .rm-severity-blocking { background: #fef2f2; color: #991b1b; font-weight: 700; }
+    .rm-severity-important { background: #fff7ed; color: #9a3412; }
+    .rm-severity-suggestion { background: #f3f4f6; color: #6b7280; }
+
+    /* Detail page */
+    .rm-detail { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px; }
+    .rm-detail-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    .rm-detail-content { font-size: 15px; line-height: 1.7; margin-bottom: 24px; white-space: pre-wrap; }
+    .rm-detail-meta { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13px; margin-bottom: 24px; padding: 16px; background: #f9fafb; border-radius: 8px; }
+    .rm-detail-meta dt { color: #6b7280; font-weight: 500; }
+    .rm-detail-meta dd { color: #374151; }
+    .rm-detail-meta dd code { font-size: 12px; background: #e5e7eb; padding: 1px 5px; border-radius: 3px; }
+
+    /* Thread */
+    .rm-thread { margin-top: 24px; border-top: 1px solid #e5e7eb; padding-top: 20px; }
+    .rm-thread h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #374151; }
+    .rm-thread-entry { padding: 12px 16px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; line-height: 1.5; }
+    .rm-thread-agent { background: #eff6ff; border-left: 3px solid #3b82f6; }
+    .rm-thread-user { background: #f9fafb; border-left: 3px solid #e5e7eb; }
+    .rm-thread-role { font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+    .rm-thread-time { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+
+    /* Actions */
+    .rm-actions { display: flex; gap: 8px; margin-top: 24px; flex-wrap: wrap; }
+    .rm-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; border: 1px solid #e5e7eb; background: #fff; color: #374151; cursor: pointer; transition: all 0.15s; }
+    .rm-btn:hover { border-color: #818cf8; color: #4361ee; text-decoration: none; }
+    .rm-btn-primary { background: #4361ee; color: #fff; border-color: #4361ee; }
+    .rm-btn-primary:hover { background: #3730a3; color: #fff; }
+    .rm-btn-success { background: #10b981; color: #fff; border-color: #10b981; }
+    .rm-btn-success:hover { background: #059669; color: #fff; }
+    .rm-btn-danger { background: #ef4444; color: #fff; border-color: #ef4444; }
+    .rm-btn-danger:hover { background: #dc2626; color: #fff; }
+
+    /* Forms */
+    .rm-form-group { margin-bottom: 12px; }
+    .rm-form-group label { display: block; font-size: 12px; font-weight: 500; color: #6b7280; margin-bottom: 4px; }
+    .rm-input { width: 100%; padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 13px; font-family: inherit; resize: vertical; }
+    .rm-input:focus { outline: none; border-color: #818cf8; box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+
+    /* Back link */
+    .rm-back { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: #6b7280; margin-bottom: 16px; }
+    .rm-back:hover { color: #4361ee; text-decoration: none; }
+
+    /* Empty state */
+    .rm-empty { text-align: center; padding: 48px 24px; color: #9ca3af; }
+    .rm-empty-icon { font-size: 36px; margin-bottom: 12px; }
+    .rm-empty-text { font-size: 14px; }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      .rm-stats { flex-direction: column; }
+      .rm-stat { min-width: unset; }
+      .rm-filters { flex-direction: column; align-items: stretch; }
+      .rm-detail-header { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <header class="rm-header">
+    <h1><span>&#9670;</span> Rails Markup</h1>
+    <nav>
+      <a href="<%= rails_markup.root_path %>">Dashboard</a>
+    </nav>
+  </header>
+
+  <main class="rm-container">
+    <% if notice.present? %>
+      <div class="rm-flash rm-flash-notice"><%= notice %></div>
+    <% end %>
+    <% if alert.present? %>
+      <div class="rm-flash rm-flash-alert"><%= alert %></div>
+    <% end %>
+
+    <%= yield %>
+  </main>
+</body>
+</html>

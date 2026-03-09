@@ -27,7 +27,7 @@ class McpServerTest < Minitest::Test
 
     response = parse_output
     tools = response["result"]["tools"]
-    assert_equal 9, tools.size
+    assert_equal 13, tools.size
     assert_equal "rails_markup_list_sessions", tools.first["name"]
   end
 

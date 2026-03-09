@@ -1,0 +1,114 @@
+<% content_for(:title) { "Annotation ##{@annotation.id}" } %>
+
+<a href="<%= rails_markup.root_path %>" class="rm-back">&larr; Back to dashboard</a>
+
+<div class="rm-detail">
+  <%# Header badges %>
+  <div class="rm-detail-header">
+    <span class="rm-dot rm-dot-<%= @annotation.status %>"></span>
+    <span class="rm-badge rm-status-<%= @annotation.status %>"><%= @annotation.status %></span>
+    <span class="rm-badge rm-intent-<%= @annotation.intent %>"><%= @annotation.intent %></span>
+    <span class="rm-badge rm-severity-<%= @annotation.severity %>"><%= @annotation.severity %></span>
+  </div>
+
+  <%# Content %>
+  <div class="rm-detail-content"><%= @annotation.content %></div>
+
+  <%# Metadata %>
+  <dl class="rm-detail-meta">
+    <dt>Page</dt>
+    <dd><code><%= @annotation.page_url %></code></dd>
+
+    <% if @annotation.selected_text.present? %>
+      <dt>Selected text</dt>
+      <dd>&ldquo;<%= truncate(@annotation.selected_text, length: 200) %>&rdquo;</dd>
+    <% end %>
+
+    <% if @annotation.target.present? && @annotation.target["selector"].present? %>
+      <dt>Element</dt>
+      <dd><code><%= @annotation.target["selector"] %></code></dd>
+    <% end %>
+
+    <% if @annotation.target.present? && @annotation.target["boundingBox"].present? %>
+      <dt>Position</dt>
+      <dd><%= @annotation.target["boundingBox"].values_at("x", "y", "width", "height").compact.join(" &times; ") %></dd>
+    <% end %>
+
+    <dt>Created</dt>
+    <dd><%= @annotation.created_at.strftime("%B %d, %Y at %H:%M:%S") %></dd>
+
+    <% if @annotation.updated_at != @annotation.created_at %>
+      <dt>Updated</dt>
+      <dd><%= @annotation.updated_at.strftime("%B %d, %Y at %H:%M:%S") %></dd>
+    <% end %>
+  </dl>
+
+  <%# Actions (only for non-terminal states) %>
+  <% if @annotation.status.in?(%w[pending acknowledged]) %>
+    <div class="rm-actions">
+      <% if @annotation.status == "pending" %>
+        <%= form_tag(rails_markup.annotation_path(@annotation, action_type: "acknowledge"), method: :patch, style: "display:inline") do %>
+          <button type="submit" class="rm-btn rm-btn-primary">Acknowledge</button>
+        <% end %>
+      <% end %>
+
+      <button type="button" class="rm-btn rm-btn-success" onclick="document.getElementById('resolve-form').style.display='block'">Resolve</button>
+      <button type="button" class="rm-btn rm-btn-danger" onclick="document.getElementById('dismiss-form').style.display='block'">Dismiss</button>
+    </div>
+
+    <%# Resolve form %>
+    <div id="resolve-form" style="display:none; margin-top: 16px;">
+      <%= form_tag(rails_markup.annotation_path(@annotation, action_type: "resolve"), method: :patch) do %>
+        <div class="rm-form-group">
+          <label for="summary">Resolution summary (optional)</label>
+          <textarea name="summary" id="summary" class="rm-input" rows="2" placeholder="What was done to resolve this?"></textarea>
+        </div>
+        <button type="submit" class="rm-btn rm-btn-success">Confirm Resolve</button>
+        <button type="button" class="rm-btn" onclick="this.parentElement.parentElement.style.display='none'">Cancel</button>
+      <% end %>
+    </div>
+
+    <%# Dismiss form %>
+    <div id="dismiss-form" style="display:none; margin-top: 16px;">
+      <%= form_tag(rails_markup.annotation_path(@annotation, action_type: "dismiss"), method: :patch) do %>
+        <div class="rm-form-group">
+          <label for="reason">Dismiss reason (optional)</label>
+          <textarea name="reason" id="reason" class="rm-input" rows="2" placeholder="Why is this being dismissed?"></textarea>
+        </div>
+        <button type="submit" class="rm-btn rm-btn-danger">Confirm Dismiss</button>
+        <button type="button" class="rm-btn" onclick="this.parentElement.parentElement.style.display='none'">Cancel</button>
+      <% end %>
+    </div>
+  <% end %>
+
+  <%# Thread %>
+  <% if @annotation.thread.any? %>
+    <div class="rm-thread">
+      <h3>Thread (<%= @annotation.thread.size %>)</h3>
+      <% @annotation.thread.each do |entry| %>
+        <div class="rm-thread-entry rm-thread-<%= entry['role'] || 'user' %>">
+          <div class="rm-thread-role"><%= entry["role"] || "user" %></div>
+          <div><%= entry["message"] %></div>
+          <div class="rm-thread-time"><%= entry["timestamp"] %></div>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+
+  <%# Reply form %>
+  <div class="rm-thread" style="<%= @annotation.thread.empty? ? 'margin-top: 24px; border-top: 1px solid #e5e7eb; padding-top: 20px;' : '' %>">
+    <h3>Add reply</h3>
+    <%= form_tag(rails_markup.annotation_path(@annotation, action_type: "reply"), method: :patch) do %>
+      <div class="rm-form-group">
+        <textarea name="message" class="rm-input" rows="2" placeholder="Type a reply..." required></textarea>
+      </div>
+      <div class="rm-form-group">
+        <select name="role" class="rm-select">
+          <option value="agent">Agent</option>
+          <option value="user">User</option>
+        </select>
+      </div>
+      <button type="submit" class="rm-btn rm-btn-primary">Reply</button>
+    <% end %>
+  </div>
+</div>

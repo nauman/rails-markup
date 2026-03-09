@@ -1,0 +1,21 @@
+class CreateRailsMarkupAnnotations < ActiveRecord::Migration<%= migration_version %>
+  def change
+    create_table :<%= RailsMarkup.config.table_name %> do |t|
+      t.string :page_url, null: false
+      t.jsonb :target, default: {}
+      t.text :content, null: false
+      t.string :intent, null: false, default: "change"
+      t.string :severity, null: false, default: "suggestion"
+      t.string :status, null: false, default: "pending"
+      t.text :selected_text
+      t.jsonb :metadata, default: {}
+      t.jsonb :thread, default: []
+
+      t.timestamps
+    end
+
+    add_index :<%= RailsMarkup.config.table_name %>, :status
+    add_index :<%= RailsMarkup.config.table_name %>, :page_url
+    add_index :<%= RailsMarkup.config.table_name %>, :created_at
+  end
+end
