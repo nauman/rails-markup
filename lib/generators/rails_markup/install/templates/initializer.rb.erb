@@ -1,12 +1,12 @@
 # frozen_string_literal: true
 
 RailsMarkup.configure do |config|
-  # Authorization check — receives the controller instance.
-  # Return true to allow access, false to deny.
-  # config.auth_check = ->(controller) { controller.current_user&.admin? }
+  # Base controller class for dashboard authentication.
+  # Set to a controller that provides admin auth (like Mission Control does).
+  # config.base_controller_class = "AdminAuthController"
 
   # Bearer token for the external API (used by MCP production tools).
-  # Set to enable the /feedback/external/* endpoints.
+  # Set to enable the /external/* endpoints.
   # config.api_token = Rails.application.credentials.dig(:rails_markup, :api_token)
 
   # Database table name (default: "rails_markup_annotations")

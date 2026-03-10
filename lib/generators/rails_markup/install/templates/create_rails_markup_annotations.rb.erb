@@ -1,6 +1,7 @@
 class CreateRailsMarkupAnnotations < ActiveRecord::Migration<%= migration_version %>
   def change
-    create_table :<%= RailsMarkup.config.table_name %> do |t|
+    create_table :rails_markup_annotations do |t|
+      t.bigint :user_id
       t.string :page_url, null: false
       t.jsonb :target, default: {}
       t.text :content, null: false
@@ -14,8 +15,8 @@ class CreateRailsMarkupAnnotations < ActiveRecord::Migration<%= migration_versio
       t.timestamps
     end
 
-    add_index :<%= RailsMarkup.config.table_name %>, :status
-    add_index :<%= RailsMarkup.config.table_name %>, :page_url
-    add_index :<%= RailsMarkup.config.table_name %>, :created_at
+    add_index :rails_markup_annotations, :status
+    add_index :rails_markup_annotations, :page_url
+    add_index :rails_markup_annotations, :created_at
   end
 end

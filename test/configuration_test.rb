@@ -3,9 +3,9 @@
 require_relative "engine_test_helper"
 
 class ConfigurationTest < ActiveSupport::TestCase
-  test "defaults auth_check to always allow" do
+  test "defaults base_controller_class to engine's ApplicationController" do
     config = RailsMarkup::Configuration.new
-    assert config.auth_check.call(nil)
+    assert_equal "RailsMarkup::ApplicationController", config.base_controller_class
   end
 
   test "defaults table_name to rails_markup_annotations" do
@@ -44,11 +44,9 @@ class ConfigurationTest < ActiveSupport::TestCase
     assert_equal RailsMarkup.configuration, RailsMarkup.config
   end
 
-  test "auth_check accepts lambda" do
+  test "base_controller_class accepts string" do
     config = RailsMarkup::Configuration.new
-    config.auth_check = ->(ctrl) { ctrl == :admin }
-
-    assert config.auth_check.call(:admin)
-    assert_not config.auth_check.call(:user)
+    config.base_controller_class = "ActionController::Base"
+    assert_equal "ActionController::Base", config.base_controller_class
   end
 end

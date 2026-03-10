@@ -1,8 +1,7 @@
 # frozen_string_literal: true
 
 module RailsMarkup
-  class DashboardController < ApplicationController
-    before_action :authorize!
+  class DashboardController < RailsMarkup.config.base_controller_class.constantize
     before_action :set_annotation, only: %i[show update]
 
     # GET /feedback

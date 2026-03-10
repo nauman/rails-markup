@@ -1,5 +1,4 @@
 <%# Rails Markup annotation toolbar — self-contained, no Tailwind/Stimulus dependency %>
-<% if RailsMarkup.config.auth_check.call(self) %>
 <script>
 <%= File.read(File.expand_path("../../../assets/javascripts/rails_markup/toolbar.js", __dir__)) %>
 </script>
@@ -11,4 +10,3 @@
     });
   });
 </script>
-<% end %>

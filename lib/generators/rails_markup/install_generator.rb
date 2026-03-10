@@ -12,7 +12,7 @@ module RailsMarkup
 
       desc "Install Rails Markup: create migration, initializer, and mount engine routes."
 
-      def create_migration
+      def copy_migration
         migration_template "create_rails_markup_annotations.rb.erb",
           "db/migrate/create_rails_markup_annotations.rb"
       end

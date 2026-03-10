@@ -2,6 +2,7 @@
 
 ActiveRecord::Schema.define do
   create_table :rails_markup_annotations, force: true do |t|
+    t.bigint :user_id
     t.string :page_url, null: false
     t.text :target, default: "{}"
     t.text :content, null: false

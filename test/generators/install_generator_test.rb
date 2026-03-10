@@ -57,7 +57,7 @@ class InstallGeneratorTest < ActiveSupport::TestCase
     content = File.read(template_path)
 
     assert_match(/RailsMarkup\.configure/, content)
-    assert_match(/auth_check/, content)
+    assert_match(/base_controller_class/, content)
     assert_match(/api_token/, content)
     assert_match(/table_name/, content)
     assert_match(/per_page/, content)

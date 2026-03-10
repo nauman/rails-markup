@@ -40,6 +40,18 @@ module RailsMarkup
       assert_includes annotation.errors[:status], "is not included in the list"
     end
 
+    test "valid without user_id" do
+      annotation = Annotation.new(content: "Test", page_url: "/test")
+      assert annotation.valid?
+      assert_nil annotation.user_id
+    end
+
+    test "valid with user_id" do
+      annotation = Annotation.new(content: "Test", page_url: "/test", user_id: 42)
+      assert annotation.valid?
+      assert_equal 42, annotation.user_id
+    end
+
     test "accepts all valid intents" do
       Annotation::INTENTS.each do |intent|
         annotation = Annotation.new(content: "Test", page_url: "/test", intent: intent)

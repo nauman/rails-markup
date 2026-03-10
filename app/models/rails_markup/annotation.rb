@@ -8,10 +8,13 @@ module RailsMarkup
     SEVERITIES = %w[suggestion important blocking].freeze
     STATUSES = %w[pending acknowledged resolved dismissed].freeze
 
-    # Serialize JSON columns for non-JSONB adapters (SQLite, MySQL)
-    serialize :target, coder: JSON
-    serialize :metadata, coder: JSON
-    serialize :thread, coder: JSON
+    # Optional user association — no FK constraint, engine doesn't know host users table
+    belongs_to :user, optional: true
+
+    # Works with both jsonb (PostgreSQL) and text (SQLite/MySQL) columns.
+    attribute :target, :json, default: {}
+    attribute :metadata, :json, default: {}
+    attribute :thread, :json, default: []
 
     validates :content, presence: true
     validates :page_url, presence: true
@@ -53,6 +56,7 @@ module RailsMarkup
     def as_api_json
       {
         id: id.to_s,
+        userId: user_id,
         content: content,
         intent: intent,
         severity: severity,

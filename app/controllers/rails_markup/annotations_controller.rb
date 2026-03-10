@@ -4,7 +4,6 @@ module RailsMarkup
   class AnnotationsController < ApplicationController
     skip_forgery_protection
 
-    before_action :authorize!
     before_action :set_annotation, only: %i[acknowledge resolve dismiss reply]
 
     # POST /feedback/api/sessions
@@ -15,6 +14,7 @@ module RailsMarkup
     # POST /feedback/api/sessions/:session_id/annotations
     def create
       annotation = Annotation.new(annotation_params)
+      annotation.user_id = current_user&.id if respond_to?(:current_user, true)
 
       if annotation.save
         render json: annotation.as_api_json, status: :created

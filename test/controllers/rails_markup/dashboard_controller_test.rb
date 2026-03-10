@@ -4,30 +4,9 @@ require_relative "../../engine_test_helper"
 
 module RailsMarkup
   class DashboardControllerTest < ActionDispatch::IntegrationTest
-    # --- Auth gating ---
+    # --- Index ---
 
-    test "index renders when auth passes" do
-      get rails_markup.root_path
-      assert_response :success
-    end
-
-    test "index returns 403 when auth fails" do
-      with_auth_check(->(_) { false }) do
-        get rails_markup.root_path
-        assert_response :forbidden
-      end
-    end
-
-    test "show returns 403 when auth fails" do
-      with_auth_check(->(_) { false }) do
-        get rails_markup.annotation_path(annotations(:pending_fix))
-        assert_response :forbidden
-      end
-    end
-
-    # --- Index filtering ---
-
-    test "index shows all annotations by default" do
+    test "index renders annotations" do
       get rails_markup.root_path
       assert_response :success
     end
@@ -112,16 +91,6 @@ module RailsMarkup
         params: { action_type: "reply", message: "Noted" }
 
       assert_equal "agent", annotation.reload.thread.last["role"]
-    end
-
-    private
-
-    def with_auth_check(check)
-      original = RailsMarkup.config.auth_check
-      RailsMarkup.config.auth_check = check
-      yield
-    ensure
-      RailsMarkup.config.auth_check = original
     end
   end
 end

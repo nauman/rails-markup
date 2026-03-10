@@ -2,10 +2,10 @@
 
 module RailsMarkup
   class Configuration
-    # Lambda called with controller instance to check authorization.
-    # Default: always allow (override in initializer).
-    # Example: ->(controller) { controller.current_user&.admin? }
-    attr_accessor :auth_check
+    # Base controller class name for dashboard/API controllers.
+    # Set to a controller that provides authentication.
+    # Example: "AdminAuthController"
+    attr_accessor :base_controller_class
 
     # Bearer token for the external API (MCP production tools).
     # Set to nil to disable external API.
@@ -22,7 +22,7 @@ module RailsMarkup
     attr_accessor :toolbar_accent
 
     def initialize
-      @auth_check = ->(_controller) { true }
+      @base_controller_class = "RailsMarkup::ApplicationController"
       @api_token = nil
       @table_name = "rails_markup_annotations"
       @per_page = 25
