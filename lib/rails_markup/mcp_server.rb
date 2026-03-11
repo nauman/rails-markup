@@ -335,11 +335,11 @@ module RailsMarkup
       base = prod_base_url(args)
       token = prod_token(args)
       return { error: "No base URL. Set RAILS_MARKUP_PROD_URL env var or pass baseUrl param." } unless base
-      return { error: "No token. Set RAILS_MARKUP_PROD_TOKEN env var or pass token param." } unless token
 
       mark_acknowledged = args["markAcknowledged"] != false
 
-      resp = prod_get("#{base}/internal/annotations/pending", token)
+      mount = args["mountPath"] || ENV["RAILS_MARKUP_MOUNT_PATH"] || "/admin/annotations"
+      resp = prod_get("#{base}#{mount}/external/annotations/pending", token)
       return { error: "API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
 
       data = JSON.parse(resp.body)
@@ -347,7 +347,7 @@ module RailsMarkup
 
       if mark_acknowledged && annotations.any?
         annotations.each do |ann|
-          prod_patch("#{base}/internal/annotations/#{ann["id"]}/acknowledge", token)
+          prod_patch("#{base}#{mount}/external/annotations/#{ann["id"]}/acknowledge", token)
         end
       end
 
@@ -359,10 +359,10 @@ module RailsMarkup
       token = prod_token(args)
       annotation_id = args["annotationId"]
       return { error: "No base URL. Set RAILS_MARKUP_PROD_URL env var or pass baseUrl param." } unless base
-      return { error: "No token. Set RAILS_MARKUP_PROD_TOKEN env var or pass token param." } unless token
       return { error: "No annotationId provided." } unless annotation_id
 
-      resp = prod_patch("#{base}/internal/annotations/#{annotation_id}/#{action}", token, params)
+      mount = args["mountPath"] || ENV["RAILS_MARKUP_MOUNT_PATH"] || "/admin/annotations"
+      resp = prod_patch("#{base}#{mount}/external/annotations/#{annotation_id}/#{action}", token, params)
       return { error: "API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
 
       JSON.parse(resp.body)
