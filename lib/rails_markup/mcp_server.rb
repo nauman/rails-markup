@@ -8,6 +8,12 @@ module RailsMarkup
   # MCP (Model Context Protocol) server speaking JSON-RPC 2.0 over stdio.
   # Exposes 13 tools for AI agents to read and act on browser annotations
   # (9 local dev tools + 4 production feedback tools).
+  #
+  # Configuration (via .mcp.json env vars, set by `bin/markup configure`):
+  #   RAILS_MARKUP_DEV_URL    — local Rails server URL (auto-detected on install)
+  #   RAILS_MARKUP_PROD_URL   — production URL
+  #   RAILS_MARKUP_PROD_TOKEN — production API token
+  #   RAILS_MARKUP_MOUNT_PATH — engine mount path (default: /admin/annotations)
   class McpServer
     TOOLS = [
       {
@@ -104,7 +110,7 @@ module RailsMarkup
           type: "object",
           properties: {
             baseUrl: { type: "string", description: "Production base URL (default: env RAILS_MARKUP_PROD_URL)" },
-            token: { type: "string", description: "Internal API token (default: env RAILS_MARKUP_PROD_TOKEN)" },
+            token: { type: "string", description: "API token (default: env RAILS_MARKUP_PROD_TOKEN)" },
             markAcknowledged: { type: "boolean", description: "Acknowledge each annotation after fetching (default: true)" }
           },
           required: []
@@ -119,7 +125,7 @@ module RailsMarkup
             annotationId: { type: "string", description: "The annotation ID" },
             summary: { type: "string", description: "Summary of how it was resolved" },
             baseUrl: { type: "string", description: "Production base URL (default: env RAILS_MARKUP_PROD_URL)" },
-            token: { type: "string", description: "Internal API token (default: env RAILS_MARKUP_PROD_TOKEN)" }
+            token: { type: "string", description: "API token (default: env RAILS_MARKUP_PROD_TOKEN)" }
           },
           required: ["annotationId"]
         }
@@ -133,7 +139,7 @@ module RailsMarkup
             annotationId: { type: "string", description: "The annotation ID" },
             reason: { type: "string", description: "Reason for dismissing" },
             baseUrl: { type: "string", description: "Production base URL (default: env RAILS_MARKUP_PROD_URL)" },
-            token: { type: "string", description: "Internal API token (default: env RAILS_MARKUP_PROD_TOKEN)" }
+            token: { type: "string", description: "API token (default: env RAILS_MARKUP_PROD_TOKEN)" }
           },
           required: ["annotationId"]
         }
@@ -147,7 +153,7 @@ module RailsMarkup
             annotationId: { type: "string", description: "The annotation ID" },
             message: { type: "string", description: "The reply message" },
             baseUrl: { type: "string", description: "Production base URL (default: env RAILS_MARKUP_PROD_URL)" },
-            token: { type: "string", description: "Internal API token (default: env RAILS_MARKUP_PROD_TOKEN)" }
+            token: { type: "string", description: "API token (default: env RAILS_MARKUP_PROD_TOKEN)" }
           },
           required: ["annotationId", "message"]
         }
@@ -174,6 +180,21 @@ module RailsMarkup
     end
 
     private
+
+    # ── Shared config ─────────────────────────────────────────
+
+    def mount_path
+      ENV["RAILS_MARKUP_MOUNT_PATH"] || "/admin/annotations"
+    end
+
+    # Build the external API base for a given host URL.
+    # All annotation access goes through the engine's external controller:
+    #   {base_url}{mount_path}/external/annotations/...
+    def external_api_base(base_url)
+      "#{base_url}#{mount_path}/external"
+    end
+
+    # ── JSON-RPC dispatch ─────────────────────────────────────
 
     def handle_request(request)
       id     = request["id"]
@@ -260,25 +281,12 @@ module RailsMarkup
       result_response(id, { content: content })
     end
 
-    # -- Dev API proxy --
+    # ── Dev API proxy ─────────────────────────────────────────
     # When RAILS_MARKUP_DEV_URL is set, local tools proxy to the engine's
-    # external API instead of the in-memory store. No token needed in dev —
-    # the engine skips auth when api_token is nil.
+    # external API instead of the in-memory store. No token needed in dev.
 
     def dev_url
       ENV["RAILS_MARKUP_DEV_URL"]
-    end
-
-    def dev_mount_path
-      ENV["RAILS_MARKUP_MOUNT_PATH"] || "/admin/annotations"
-    end
-
-    def dev_token
-      ENV["RAILS_MARKUP_DEV_TOKEN"]
-    end
-
-    def dev_api_base
-      "#{dev_url}#{dev_mount_path}/external"
     end
 
     def handle_local_or_proxy(action, args, &fallback)
@@ -305,7 +313,7 @@ module RailsMarkup
     end
 
     def dev_fetch_pending
-      resp = prod_get("#{dev_api_base}/annotations/pending", dev_token)
+      resp = http_get("#{external_api_base(dev_url)}/annotations/pending")
       return { error: "Dev API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
 
       data = JSON.parse(resp.body)
@@ -315,31 +323,23 @@ module RailsMarkup
     def dev_action(annotation_id, action, **params)
       return { error: "No annotationId provided." } unless annotation_id
 
-      resp = prod_patch("#{dev_api_base}/annotations/#{annotation_id}/#{action}", dev_token, params)
+      resp = http_patch("#{external_api_base(dev_url)}/annotations/#{annotation_id}/#{action}", params: params)
       return { error: "Dev API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
 
       JSON.parse(resp.body)
     end
 
-    # -- Production API helpers --
-
-    def prod_base_url(args)
-      args["baseUrl"] || ENV["RAILS_MARKUP_PROD_URL"]
-    end
-
-    def prod_token(args)
-      args["token"] || ENV["RAILS_MARKUP_PROD_TOKEN"]
-    end
+    # ── Production API ────────────────────────────────────────
 
     def handle_fetch_production(args)
-      base = prod_base_url(args)
-      token = prod_token(args)
-      return { error: "No base URL. Set RAILS_MARKUP_PROD_URL env var or pass baseUrl param." } unless base
+      base = args["baseUrl"] || ENV["RAILS_MARKUP_PROD_URL"]
+      token = args["token"] || ENV["RAILS_MARKUP_PROD_TOKEN"]
+      return { error: "No base URL. Run: bin/markup configure --prod-url=URL" } unless base
 
       mark_acknowledged = args["markAcknowledged"] != false
+      api = external_api_base(base)
 
-      mount = args["mountPath"] || ENV["RAILS_MARKUP_MOUNT_PATH"] || "/admin/annotations"
-      resp = prod_get("#{base}#{mount}/external/annotations/pending", token)
+      resp = http_get("#{api}/annotations/pending", token: token)
       return { error: "API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
 
       data = JSON.parse(resp.body)
@@ -347,7 +347,7 @@ module RailsMarkup
 
       if mark_acknowledged && annotations.any?
         annotations.each do |ann|
-          prod_patch("#{base}#{mount}/external/annotations/#{ann["id"]}/acknowledge", token)
+          http_patch("#{api}/annotations/#{ann["id"]}/acknowledge", token: token)
         end
       end
 
@@ -355,20 +355,22 @@ module RailsMarkup
     end
 
     def handle_production_action(args, action, **params)
-      base = prod_base_url(args)
-      token = prod_token(args)
+      base = args["baseUrl"] || ENV["RAILS_MARKUP_PROD_URL"]
+      token = args["token"] || ENV["RAILS_MARKUP_PROD_TOKEN"]
       annotation_id = args["annotationId"]
-      return { error: "No base URL. Set RAILS_MARKUP_PROD_URL env var or pass baseUrl param." } unless base
+      return { error: "No base URL. Run: bin/markup configure --prod-url=URL" } unless base
       return { error: "No annotationId provided." } unless annotation_id
 
-      mount = args["mountPath"] || ENV["RAILS_MARKUP_MOUNT_PATH"] || "/admin/annotations"
-      resp = prod_patch("#{base}#{mount}/external/annotations/#{annotation_id}/#{action}", token, params)
+      api = external_api_base(base)
+      resp = http_patch("#{api}/annotations/#{annotation_id}/#{action}", token: token, params: params)
       return { error: "API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
 
       JSON.parse(resp.body)
     end
 
-    def prod_get(url, token = nil)
+    # ── HTTP helpers ──────────────────────────────────────────
+
+    def http_get(url, token: nil)
       uri = URI.parse(url)
       req = Net::HTTP::Get.new(uri)
       req["Authorization"] = "Bearer #{token}" if token
@@ -380,7 +382,7 @@ module RailsMarkup
       http.request(req)
     end
 
-    def prod_patch(url, token = nil, params = {})
+    def http_patch(url, token: nil, params: {})
       uri = URI.parse(url)
       req = Net::HTTP::Patch.new(uri)
       req["Authorization"] = "Bearer #{token}" if token
@@ -393,6 +395,8 @@ module RailsMarkup
       http.read_timeout = 15
       http.request(req)
     end
+
+    # ── Watch mode ────────────────────────────────────────────
 
     def handle_watch(args)
       timeout = [args["timeoutSeconds"]&.to_i || 120, 300].min
@@ -424,6 +428,8 @@ module RailsMarkup
       @store.unsubscribe(sub)
       batch
     end
+
+    # ── JSON-RPC responses ────────────────────────────────────
 
     def result_response(id, result)
       { jsonrpc: "2.0", id: id, result: result }

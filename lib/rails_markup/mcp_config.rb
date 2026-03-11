@@ -56,20 +56,28 @@ module RailsMarkup
     private
 
     def skeleton
+      cmd, args = detect_command
       {
         "mcpServers" => {
           SERVER_KEY => {
             "type" => "stdio",
-            "command" => "ruby",
-            "args" => [bin_path, "mcp"],
+            "command" => cmd,
+            "args" => args,
             "env" => {}
           }
         }
       }
     end
 
-    def bin_path
-      File.expand_path("../../bin/rails-markup", __dir__)
+    # Use bin/markup if it exists (install generator creates it),
+    # otherwise fall back to bundle exec rails-markup.
+    def detect_command
+      bin_wrapper = File.join(@path.sub(FILE_NAME, ""), "bin", "markup")
+      if File.exist?(bin_wrapper)
+        [bin_wrapper, ["mcp"]]
+      else
+        ["bundle", ["exec", "rails-markup", "mcp"]]
+      end
     end
 
     def mask(value)
