@@ -58,14 +58,13 @@ class CliTest < Minitest::Test
     assert_match(/No .mcp.json found/, output)
   end
 
-  def test_status_shows_masked_tokens
+  def test_status_shows_urls_unmasked_and_tokens_masked
     run_cli("configure", "--prod-url", "https://inventlist.com", "--prod-token", "ebYsw895N9YKwWFLqS2dxTLU")
     output = capture_output { run_cli("status") }
 
-    assert_match(/RAILS_MARKUP_PROD_URL/, output)
-    assert_match(/http\*+/, output)
-    assert_match(/ebYs\*+/, output)
-    refute_match(/ebYsw895N9YKwWFLqS2dxTLU/, output)
+    assert_match(/https:\/\/inventlist\.com/, output)  # URLs shown in full
+    assert_match(/ebYs\*+/, output)                     # Tokens masked
+    refute_match(/ebYsw895N9YKwWFLqS2dxTLU/, output)   # Full token never shown
   end
 
   def test_status_shows_empty_env

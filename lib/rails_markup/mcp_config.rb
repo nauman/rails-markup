@@ -14,7 +14,6 @@ module RailsMarkup
       "prod_url"    => "RAILS_MARKUP_PROD_URL",
       "prod_token"  => "RAILS_MARKUP_PROD_TOKEN",
       "dev_url"     => "RAILS_MARKUP_DEV_URL",
-      "dev_token"   => "RAILS_MARKUP_DEV_TOKEN",
       "mount_path"  => "RAILS_MARKUP_MOUNT_PATH"
     }.freeze
 
@@ -49,7 +48,9 @@ module RailsMarkup
     end
 
     def display_env
-      env.transform_values { |v| mask(v) }
+      env.each_with_object({}) do |(k, v), hash|
+        hash[k] = k.include?("TOKEN") ? mask(v) : v
+      end
     end
 
     private
