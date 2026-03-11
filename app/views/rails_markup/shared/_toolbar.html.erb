@@ -4,12 +4,16 @@
 </script>
 <script>
   (function() {
+    if (window.__rmToolbarBound) return;
+    window.__rmToolbarBound = true;
+
     var opts = {
       endpoint: "<%= rails_markup.root_path.chomp("/") %>/api",
       accent: "<%= j(RailsMarkup.config.toolbar_accent) %>",
       position: "<%= j(RailsMarkup.config.toolbar_position) %>",
       size: "<%= j(RailsMarkup.config.toolbar_size) %>",
-      enableScreenshots: <%= RailsMarkup.config.enable_screenshots ? "true" : "false" %>
+      enableScreenshots: <%= RailsMarkup.config.enable_screenshots ? "true" : "false" %>,
+      healthInterval: <%= RailsMarkup.config.health_interval %>
     };
     // Init immediately (DOM is ready — script is at end of body)
     RailsMarkupToolbar.init(opts);

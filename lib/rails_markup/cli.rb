@@ -275,22 +275,25 @@ module RailsMarkup
       $stdout.puts "#{SUCCESS_STYLE.render("Acknowledged")} ##{id}"
     end
 
-    # ── Legacy aliases ───────────────────────────────────────
+    # ── Shorthand aliases ─────────────────────────────────────
 
-    desc "fetch", "Fetch pending annotations (use 'pending' instead)"
-    method_option :env, type: :string, default: "dev", enum: %w[dev production],
-      desc: "Which environment to fetch from"
+    desc "fetch [ENVIRONMENT]", "Fetch pending annotations (default: local dev)"
+    long_desc <<-DESC
+      Fetch pending annotations from local dev or production.
+
+      Examples:
+        bin/markup fetch              # local dev
+        bin/markup fetch production   # production
+        bin/markup fetch -e production  # also production
+    DESC
+    method_option :environment, type: :string, aliases: "-e", enum: %w[dev production],
+      desc: "Environment to fetch from"
     method_option :url, type: :string, desc: "Override base URL"
     method_option :token, type: :string, desc: "Override API token"
     method_option :mount_path, type: :string, desc: "Engine mount path (default: /admin/annotations)"
-    def fetch
-      production = options[:env] == "production"
+    def fetch(env_arg = nil)
+      production = env_arg == "production" || options[:environment] == "production"
       invoke :pending, [], production: production, url: options[:url], token: options[:token], mount_path: options[:mount_path]
-    end
-
-    desc "production", "Fetch pending annotations from production (use 'pending --production' instead)"
-    def production
-      invoke :pending, [], production: true
     end
 
     desc "setup-production", "Generate a token and configure production access"

@@ -48,6 +48,7 @@
       this.position = opts.position || "bl";
       this.size = opts.size || "default";
       this.enableScreenshots = opts.enableScreenshots !== false;
+      this.healthIntervalMs = (opts.healthInterval || 60) * 1000;
       this._currentPathname = window.location.pathname;
 
       if (document.getElementById("rm-toolbar-root")) return;
@@ -56,7 +57,7 @@
       this._bindEvents();
       this._loadFromStorage();
       this._checkHealth();
-      this.healthInterval = setInterval(() => this._checkHealth(), 10000);
+      this.healthInterval = setInterval(() => this._checkHealth(), this.healthIntervalMs);
       this._boundVisibilityChange = () => this._onVisibilityChange();
       document.addEventListener("visibilitychange", this._boundVisibilityChange);
       this._renderPins();
@@ -253,8 +254,25 @@
         if (chip) self._filterAnnotations(chip.dataset.filter);
       });
 
-      // Event delegation for cards (click scrolls to element)
+      // Event delegation for cards (edit, delete, or click scrolls to element)
       document.getElementById("rm-panel-list").addEventListener("click", (e) => {
+        // Edit button
+        const editBtn = e.target.closest("[data-edit-id]");
+        if (editBtn) {
+          e.stopPropagation();
+          const id = parseInt(editBtn.dataset.editId, 10);
+          self._editAnnotation(id);
+          return;
+        }
+        // Delete button
+        const deleteBtn = e.target.closest("[data-delete-id]");
+        if (deleteBtn) {
+          e.stopPropagation();
+          const id = parseInt(deleteBtn.dataset.deleteId, 10);
+          self._deleteAnnotation(id);
+          return;
+        }
+        // Card click scrolls to element
         const card = e.target.closest("[data-card-id]");
         if (!card) return;
         const id = parseInt(card.dataset.cardId, 10);
@@ -574,6 +592,22 @@
       // If drawing canvas exists, merge drawings onto screenshot
       const screenshot = this._mergeDrawing() || this._currentScreenshot;
 
+      // Edit existing annotation
+      if (this.editingId) {
+        const existing = this.annotations.find(a => a.id === this.editingId);
+        if (existing) {
+          existing.comment = comment;
+          existing.intent = intent;
+          existing.severity = severity;
+          if (screenshot) existing.screenshot = screenshot;
+          this._saveToStorage();
+          this._rebuildList();
+          this._closePopup();
+          return;
+        }
+      }
+
+      // New annotation
       const annotation = {
         id: this.nextId++,
         comment, intent, severity,
@@ -654,6 +688,14 @@
           <span class="rm-card-id">#${annotation.id}</span>
           <span class="rm-card-badge" style="background:${ic.bg};color:${ic.text}">${annotation.intent}</span>
           ${annotation.severity !== "suggestion" ? '<span class="rm-card-badge" style="background:#fff7ed;color:#9a3412">' + annotation.severity + '</span>' : ''}
+          <span style="margin-left:auto;display:flex;gap:2px;">
+            <button data-edit-id="${annotation.id}" title="Edit" style="padding:2px 4px;background:none;border:none;cursor:pointer;color:#d1d5db;border-radius:4px;display:flex;align-items:center;" onmouseover="this.style.color='#6b7280'" onmouseout="this.style.color='#d1d5db'">
+              <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M17 3a2.85 2.85 0 114 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+            </button>
+            <button data-delete-id="${annotation.id}" title="Delete" style="padding:2px 4px;background:none;border:none;cursor:pointer;color:#d1d5db;border-radius:4px;display:flex;align-items:center;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#d1d5db'">
+              <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+          </span>
         </div>
         <div class="rm-card-body">${this._esc(annotation.comment)}</div>
         <div class="rm-card-path">${this._esc(annotation.element?.selector || "")}</div>
@@ -673,6 +715,63 @@
         return;
       }
       filtered.forEach(a => this._renderCard(a));
+    },
+
+    _editAnnotation(id) {
+      const annotation = this.annotations.find(a => a.id === id);
+      if (!annotation) return;
+      this.editingId = id;
+      this._currentElement = annotation.element;
+      this.selectedText = annotation.selectedText;
+      this._currentScreenshot = annotation.screenshot || null;
+
+      // Pre-fill popup fields
+      document.getElementById("rm-popup-el").textContent = annotation.element?.selector || "";
+      document.getElementById("rm-popup-text").textContent = annotation.selectedText
+        ? '"' + annotation.selectedText.slice(0, 60) + '"'
+        : (annotation.element?.nearbyText || "").slice(0, 60);
+      document.getElementById("rm-popup-input").value = annotation.comment;
+      document.getElementById("rm-intent-select").value = annotation.intent;
+      document.getElementById("rm-severity-select").value = annotation.severity;
+      document.getElementById("rm-submit-label").textContent = "Save";
+      this._updateCharCount();
+
+      // Clean up previous drawing elements
+      const popup = document.getElementById("rm-popup");
+      const oldContainer = popup.querySelector(".rm-drawing-container");
+      if (oldContainer) oldContainer.remove();
+      const oldTools = popup.querySelector("[data-draw]");
+      if (oldTools) { const p = oldTools.parentElement; if (p && !p.classList.contains("rm-popup-actions")) p.remove(); }
+      this.drawingCanvas = null;
+      this.drawingCtx = null;
+      this.drawingHistory = [];
+      this.drawingMode = null;
+      this._screenshotImg = null;
+
+      // Position popup centered on screen
+      popup.style.display = "block";
+      popup.style.width = this._currentScreenshot ? "480px" : "360px";
+      const pw = popup.offsetWidth || 360;
+      const ph = popup.offsetHeight || 300;
+      popup.style.left = Math.max(10, Math.round((window.innerWidth - pw) / 2)) + "px";
+      popup.style.top = Math.max(10, Math.round((window.innerHeight - ph) / 2)) + "px";
+      popup.style.opacity = "1";
+
+      if (this._currentScreenshot) {
+        this._initDrawing(this._currentScreenshot);
+      }
+
+      setTimeout(() => document.getElementById("rm-popup-input").focus(), 50);
+    },
+
+    _deleteAnnotation(id) {
+      const idx = this.annotations.findIndex(a => a.id === id);
+      if (idx === -1) return;
+      this.annotations.splice(idx, 1);
+      this._saveToStorage();
+      this._renderPins();
+      this._rebuildList();
+      this._updateCount();
     },
 
     _updateCount() {
@@ -802,7 +901,7 @@
         // Tab visible — resume health checks immediately
         if (!this.healthInterval) {
           this._checkHealth();
-          this.healthInterval = setInterval(() => this._checkHealth(), 10000);
+          this.healthInterval = setInterval(() => this._checkHealth(), this.healthIntervalMs);
         }
       }
     },

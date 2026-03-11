@@ -58,6 +58,10 @@ module RailsMarkup
     # Default: "default"
     attr_reader :toolbar_size
 
+    # Health check poll interval in seconds.
+    # Default: 60
+    attr_reader :health_interval
+
     def initialize
       @base_controller_class = "RailsMarkup::ApplicationController"
       @api_token = nil
@@ -71,6 +75,7 @@ module RailsMarkup
       @author_name_method = :email
       @on_create_callback = nil
       @enable_screenshots = true
+      @health_interval = 60
     end
 
     def resolve_author_name(user)
@@ -113,6 +118,13 @@ module RailsMarkup
       end
 
       @toolbar_size = value.to_s
+    end
+
+    def health_interval=(value)
+      val = value.to_i
+      raise ArgumentError, "health_interval must be at least 10 (seconds)" unless val >= 10
+
+      @health_interval = val
     end
   end
 
