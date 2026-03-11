@@ -114,33 +114,25 @@ module RailsMarkup
         return
       end
 
-      say "Fetching from #{target}: #{base_url}#{mount_path}", :green
       annotations = fetch_pending(api_url, token)
 
+      env_label = target == "dev" ? "Development" : "Production"
+      $stdout.puts ""
+      $stdout.puts "#{LABEL_STYLE.render(" #{env_label} ")} #{HINT_STYLE.render(base_url)}"
+      $stdout.puts ""
+
       if annotations.empty?
-        say "No pending annotations.", :yellow
+        say "  No pending annotations.", :yellow
+        say ""
         return
       end
 
-      say "#{annotations.size} pending annotation(s):\n"
-      annotations.each_with_index do |ann, i|
-        target = ann["target"] || {}
-        page = URI.parse(ann["pageUrl"]).path rescue ann["pageUrl"]
-        nearby = target["nearbyText"]&.strip&.gsub(/\s+/, " ")&.slice(0, 80)
+      $stdout.puts annotation_table(annotations)
+      say ""
 
-        say "─" * 60
-        say "##{ann["id"]}  #{ann["intent"]} | #{ann["severity"]}  #{page}"
-        say ""
-        say "  #{ann["content"]}"
-        say ""
-        say "  CSS path:  #{target["cssPath"]}" if target["cssPath"]
-        say "  Selector:  #{target["selector"]}" if target["selector"]
-        say "  Text near: \"#{nearby}\"" if nearby
-        say "  Selected:  \"#{ann["selectedText"]}\"" if ann["selectedText"]
-        say "  Created:   #{ann["createdAt"]}"
-        say ""
+      annotations.each do |ann|
+        render_annotation(ann)
       end
-      say "─" * 60
     end
 
     desc "setup-production", "Generate a token and configure production access"
@@ -222,6 +214,46 @@ module RailsMarkup
     rescue => e
       say "Connection error: #{e.message}", :red
       []
+    end
+
+    def annotation_table(annotations)
+      rows = annotations.map do |ann|
+        page = URI.parse(ann["pageUrl"]).path rescue ann["pageUrl"]
+        content = ann["content"].to_s.slice(0, 50)
+        content += "..." if ann["content"].to_s.length > 50
+        ["##{ann["id"]}", ann["intent"], ann["severity"], page, content]
+      end
+
+      Lipgloss::Table.new
+        .headers(["ID", "Intent", "Severity", "Page", "Feedback"])
+        .rows(rows)
+        .border(:rounded)
+        .style_func(rows: rows.size, columns: 5) do |row, _col|
+          if row == Lipgloss::Table::HEADER_ROW
+            HEADER_STYLE
+          else
+            row.odd? ? MASKED_STYLE : ODD_STYLE
+          end
+        end
+        .render
+    end
+
+    def render_annotation(ann)
+      target = ann["target"] || {}
+      page = URI.parse(ann["pageUrl"]).path rescue ann["pageUrl"]
+      nearby = target["nearbyText"]&.strip&.gsub(/\s+/, " ")&.slice(0, 80)
+
+      say "─" * 60
+      $stdout.puts "#{LABEL_STYLE.render(" ##{ann["id"]} ")} #{ann["intent"]} | #{ann["severity"]}  #{HINT_STYLE.render(page)}"
+      say ""
+      say "  #{ann["content"]}"
+      say ""
+      say "  CSS path:  #{target["cssPath"]}" if target["cssPath"]
+      say "  Selector:  #{target["selector"]}" if target["selector"]
+      say "  Text near: \"#{nearby}\"" if nearby
+      say "  Selected:  \"#{ann["selectedText"]}\"" if ann["selectedText"]
+      say "  Created:   #{ann["createdAt"]}"
+      say ""
     end
 
     def env_table(env_hash)
