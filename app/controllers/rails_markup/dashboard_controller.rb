@@ -35,25 +35,33 @@ module RailsMarkup
       end
     end
 
+    ALLOWED_STATUSES = %w[all pending acknowledged resolved dismissed].freeze
+    ALLOWED_ROLES = %w[agent user].freeze
+
     before_action :set_annotation, only: %i[show update]
 
     # GET /feedback
     def index
-      status = params[:status] || "pending"
-      scope = Annotation.recent
-      scope = scope.where(status: status) unless status == "all"
-      scope = scope.for_page(params[:page_url]) if params[:page_url].present?
+      @current_status = ALLOWED_STATUSES.include?(params[:status]) ? params[:status] : "pending"
+      base_scope = params[:page_url].present? ? Annotation.for_page(params[:page_url]) : Annotation.all
 
+      # Single grouped count query instead of 6 separate queries
+      counts = base_scope.group(:status).count
+      @total_count = counts.values.sum
+      @pending_count = counts["pending"] || 0
+      @acknowledged_count = counts["acknowledged"] || 0
+      @resolved_count = counts["resolved"] || 0
+      @dismissed_count = counts["dismissed"] || 0
+
+      scope = base_scope.recent
+      scope = scope.where(status: @current_status) unless @current_status == "all"
+
+      # Use filtered count for pagination (not total)
+      @filtered_count = scope.count
       @current_page = (params[:page] || 1).to_i
       @annotations = scope.limit(per_page).offset((@current_page - 1) * per_page)
 
-      @total_count = Annotation.count
-      @pending_count = Annotation.pending.count
-      @acknowledged_count = Annotation.acknowledged.count
-      @resolved_count = Annotation.resolved.count
-      @dismissed_count = Annotation.dismissed.count
       @page_urls = Annotation.distinct.pluck(:page_url).sort
-      @current_status = params[:status] || "pending"
       @current_page_url = params[:page_url]
     end
 
@@ -63,10 +71,12 @@ module RailsMarkup
 
     # POST /feedback/dismiss_all
     def dismiss_all
-      scope = Annotation.where(status: %w[pending acknowledged])
-      scope = scope.where(status: params[:status]) if params[:status].present?
-      count = scope.count
-      scope.find_each { |a| a.dismiss!(reason: "Bulk dismissed") }
+      status = params[:status]
+      unless status.in?(%w[pending acknowledged])
+        return redirect_to root_path, alert: "Invalid status for bulk dismiss."
+      end
+
+      count = Annotation.where(status: status).update_all(status: "dismissed")
       redirect_to root_path(status: "dismissed"), notice: "#{count} annotations dismissed."
     end
 
@@ -76,7 +86,11 @@ module RailsMarkup
       when "acknowledge" then @annotation.acknowledge!
       when "resolve"     then @annotation.resolve!(summary: params[:summary].presence)
       when "dismiss"     then @annotation.dismiss!(reason: params[:reason].presence)
-      when "reply"       then @annotation.add_reply!(message: params[:message], role: params[:role] || "agent")
+      when "reply"
+        role = ALLOWED_ROLES.include?(params[:role]) ? params[:role] : "agent"
+        @annotation.add_reply!(message: params[:message], role: role)
+      else
+        return redirect_to annotation_path(@annotation), alert: "Unknown action."
       end
 
       redirect_to annotation_path(@annotation), notice: "Annotation updated."

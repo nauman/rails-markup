@@ -6,6 +6,10 @@ module RailsMarkup
       before_action :authenticate_token!
       before_action :set_annotation, only: %i[show acknowledge resolve dismiss reply]
 
+      rescue_from ActiveRecord::RecordNotFound do
+        render json: { error: "not found" }, status: :not_found
+      end
+
       # GET /feedback/external/annotations/pending
       def pending
         annotations = Annotation.pending.recent.limit(50)
@@ -37,6 +41,8 @@ module RailsMarkup
 
       # PATCH /feedback/external/annotations/:id/reply
       def reply
+        return render json: { error: "message is required" }, status: :unprocessable_entity if params[:message].blank?
+
         @annotation.add_reply!(message: params[:message], role: "agent")
         render json: @annotation.as_api_json
       end
@@ -48,8 +54,8 @@ module RailsMarkup
       end
 
       def authenticate_token!
-        # Development/test — always allow (no token needed locally)
-        return if Rails.env.development? || Rails.env.test?
+        # Development — allow local requests without token
+        return if Rails.env.development? && request.local?
 
         token = RailsMarkup.config.api_token
         return head(:not_found) if token.nil?

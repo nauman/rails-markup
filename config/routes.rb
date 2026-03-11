@@ -3,7 +3,7 @@
 RailsMarkup::Engine.routes.draw do
   # Dashboard
   root to: "dashboard#index"
-  resources :annotations, only: [:show, :update], controller: "dashboard"
+  resources :annotations, only: [:show, :update], controller: "dashboard", constraints: { id: /\d+/ }
   post "dismiss_all", to: "dashboard#dismiss_all"
 
   # Toolbar API (same-origin, used by browser toolbar)
@@ -12,7 +12,7 @@ RailsMarkup::Engine.routes.draw do
     post "sessions/:session_id/annotations", to: "annotations#create"
     get "health", to: "annotations#health"
 
-    scope "annotations/:id" do
+    scope "annotations/:id", constraints: { id: /\d+/ } do
       post "acknowledge", to: "annotations#acknowledge"
       post "resolve", to: "annotations#resolve"
       post "dismiss", to: "annotations#dismiss"
@@ -23,9 +23,9 @@ RailsMarkup::Engine.routes.draw do
   # External API (token-authenticated, used by MCP production tools)
   namespace :external, defaults: { format: :json } do
     get "annotations/pending", to: "annotations#pending"
-    get "annotations/:id", to: "annotations#show"
+    get "annotations/:id", to: "annotations#show", constraints: { id: /\d+/ }
 
-    scope "annotations/:id" do
+    scope "annotations/:id", constraints: { id: /\d+/ } do
       patch "acknowledge", to: "annotations#acknowledge"
       patch "resolve", to: "annotations#resolve"
       patch "dismiss", to: "annotations#dismiss"

@@ -2,6 +2,8 @@
 
 module RailsMarkup
   class Configuration
+    ALLOWED_ACCENTS = %w[indigo amber blue emerald rose].freeze
+
     # Base controller class name for dashboard/API controllers.
     # Set to a controller that provides authentication.
     # Example: "AdminAuthController"
@@ -14,12 +16,8 @@ module RailsMarkup
     # Database table name for annotations.
     attr_accessor :table_name
 
-    # Number of annotations per page on the dashboard.
-    attr_accessor :per_page
-
     # Accent color for the toolbar FAB and UI elements.
-    # Accepts: "indigo", "amber", "blue", "emerald", "rose"
-    attr_accessor :toolbar_accent
+    attr_reader :toolbar_accent
 
     # URL path for "Back to app" link in the dashboard header.
     # Set to nil to hide the link.
@@ -32,6 +30,9 @@ module RailsMarkup
     # Example: "admin"
     attr_accessor :dashboard_layout
 
+    # Number of annotations per page on the dashboard.
+    attr_reader :per_page
+
     def initialize
       @base_controller_class = "RailsMarkup::ApplicationController"
       @api_token = nil
@@ -40,6 +41,20 @@ module RailsMarkup
       @toolbar_accent = "indigo"
       @return_url = nil
       @dashboard_layout = "rails_markup/application"
+    end
+
+    def per_page=(value)
+      raise ArgumentError, "per_page must be a positive integer" unless value.is_a?(Integer) && value.positive?
+
+      @per_page = value
+    end
+
+    def toolbar_accent=(value)
+      unless ALLOWED_ACCENTS.include?(value.to_s)
+        raise ArgumentError, "toolbar_accent must be one of: #{ALLOWED_ACCENTS.join(', ')}"
+      end
+
+      @toolbar_accent = value.to_s
     end
   end
 

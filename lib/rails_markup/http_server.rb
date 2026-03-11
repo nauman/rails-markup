@@ -25,8 +25,8 @@ module RailsMarkup
 
       @server.mount("/", CorsServlet, @store)
 
-      trap("INT")  { exit! }
-      trap("TERM") { exit! }
+      trap("INT")  { @server.shutdown }
+      trap("TERM") { @server.shutdown }
 
       @server.start
     end
@@ -177,7 +177,10 @@ module RailsMarkup
           @store.unsubscribe(sub)
         end
 
+        deadline = Time.now + 1800 # 30 minutes max
         loop do
+          break if Time.now >= deadline
+
           sleep 15
           out.write(": keepalive\n\n")
         rescue Errno::EPIPE, IOError
@@ -191,9 +194,10 @@ module RailsMarkup
     # --- Helpers ---
 
     def cors(res)
-      res["Access-Control-Allow-Origin"]  = "*"
-      res["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-      res["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+      port = @server[:Port] rescue 4747
+      res["Access-Control-Allow-Origin"]  = "http://localhost:#{port}"
+      res["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+      res["Access-Control-Allow-Headers"] = "Content-Type"
     end
 
     def json_response(res, data, status: 200)
@@ -208,8 +212,13 @@ module RailsMarkup
       res.body = { error: "not_found" }.to_json
     end
 
+    MAX_BODY_SIZE = 1_000_000 # 1MB
+
     def parse_json(req)
-      JSON.parse(req.body || "{}")
+      return {} if req.body.nil?
+      return {} if req.body.bytesize > MAX_BODY_SIZE
+
+      JSON.parse(req.body)
     rescue JSON::ParserError
       {}
     end

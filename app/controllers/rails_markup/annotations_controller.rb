@@ -2,9 +2,13 @@
 
 module RailsMarkup
   class AnnotationsController < ApplicationController
-    skip_forgery_protection
+    protect_from_forgery with: :null_session
 
     before_action :set_annotation, only: %i[acknowledge resolve dismiss reply]
+
+    rescue_from ActiveRecord::RecordNotFound do
+      render json: { error: "not found" }, status: :not_found
+    end
 
     # POST /feedback/api/sessions
     def create_session
@@ -48,6 +52,8 @@ module RailsMarkup
 
     # POST /feedback/api/annotations/:id/reply
     def reply
+      return render json: { error: "message is required" }, status: :unprocessable_entity if params[:message].blank?
+
       @annotation.add_reply!(message: params[:message], role: "agent")
       render json: @annotation.as_api_json
     end
@@ -58,21 +64,31 @@ module RailsMarkup
       @annotation = Annotation.find(params[:id])
     end
 
+    ALLOWED_TARGET_KEYS = %w[selector cssPath nearbyText boundingBox].freeze
+    ALLOWED_METADATA_KEYS = %w[tool url localId sessionId].freeze
+
     def annotation_params
       permitted = params.permit(:page_url, :content, :intent, :severity, :selected_text, :selectedText, target: {}, metadata: {})
       permitted[:selected_text] ||= permitted.delete(:selectedText)
       permitted[:page_url] ||= request.referer || "/"
       permitted[:target] = normalize_target(params[:target]) if params[:target].present?
-      permitted[:metadata] = params[:metadata].to_unsafe_h if params[:metadata].is_a?(ActionController::Parameters)
+      permitted[:metadata] = normalize_hash(params[:metadata], ALLOWED_METADATA_KEYS) if params[:metadata].present?
       permitted
     end
 
     def normalize_target(target)
       case target
       when String then { "selector" => target }
-      when ActionController::Parameters then target.to_unsafe_h
+      when ActionController::Parameters
+        target.permit(*ALLOWED_TARGET_KEYS, boundingBox: %i[x y top left width height]).to_h
       else {}
       end
+    end
+
+    def normalize_hash(value, allowed_keys)
+      return {} unless value.is_a?(ActionController::Parameters)
+
+      value.permit(*allowed_keys).to_h
     end
   end
 end

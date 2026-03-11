@@ -73,8 +73,9 @@ class McpConfigTest < Minitest::Test
     data = @config.read
     server = data["mcpServers"]["rails-markup"]
     assert_equal "stdio", server["type"]
-    assert_equal "ruby", server["command"]
-    assert_includes server["args"].last, "mcp"
+    # Without bin/markup present, falls back to bundle exec
+    assert_equal "bundle", server["command"]
+    assert_equal ["exec", "rails-markup", "mcp"], server["args"]
   end
 
   def test_update_env_merges_without_replacing
@@ -110,17 +111,17 @@ class McpConfigTest < Minitest::Test
 
   # -- display_env --
 
-  def test_display_env_masks_long_values
+  def test_display_env_masks_tokens_but_not_urls
     @config.update_env(
       "RAILS_MARKUP_PROD_URL" => "https://inventlist.com",
       "RAILS_MARKUP_PROD_TOKEN" => "ebYsw895N9YKwWFLqS2dxTLU"
     )
 
     display = @config.display_env
-    # "https://inventlist.com" = 22 chars → 4 shown + 18 masked
-    assert_equal "http" + "*" * 18, display["RAILS_MARKUP_PROD_URL"]
-    # "ebYsw895N9YKwWFLqS2dxTLU" = 24 chars → 4 shown + 20 masked
-    assert_equal "ebYs" + "*" * 20, display["RAILS_MARKUP_PROD_TOKEN"]
+    # URLs are shown in full
+    assert_equal "https://inventlist.com", display["RAILS_MARKUP_PROD_URL"]
+    # Tokens are masked to xxxx****
+    assert_equal "ebYs****", display["RAILS_MARKUP_PROD_TOKEN"]
   end
 
   def test_display_env_does_not_mask_short_values

@@ -10,7 +10,8 @@ module RailsMarkup
 
     initializer "rails_markup.assets" do |app|
       if app.config.respond_to?(:assets)
-        app.config.assets.precompile += %w[rails_markup/application.css rails_markup/toolbar.js]
+        # toolbar.js is inlined via the toolbar partial, no separate asset needed
+        app.config.assets.precompile += %w[rails_markup/toolbar.js]
       end
     end
   end

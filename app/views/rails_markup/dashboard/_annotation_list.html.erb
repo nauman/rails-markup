@@ -4,7 +4,7 @@
   <% end %>
 
   <%# Pagination %>
-  <% total_pages = (@total_count.to_f / RailsMarkup.config.per_page).ceil %>
+  <% total_pages = (@filtered_count.to_f / RailsMarkup.config.per_page).ceil %>
   <% if total_pages > 1 %>
     <div class="rm-filters" style="margin-top: 16px; justify-content: center;">
       <% (1..total_pages).each do |page| %>

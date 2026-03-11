@@ -16,11 +16,13 @@ module RailsMarkup
     attribute :metadata, :json, default: {}
     attribute :thread, :json, default: []
 
-    validates :content, presence: true
-    validates :page_url, presence: true
+    validates :content, presence: true, length: { maximum: 5000 }
+    validates :page_url, presence: true, length: { maximum: 2048 }
+    validates :selected_text, length: { maximum: 2000 }, allow_nil: true
     validates :intent, inclusion: { in: INTENTS }
     validates :severity, inclusion: { in: SEVERITIES }
     validates :status, inclusion: { in: STATUSES }
+    validate :thread_must_be_array
 
     scope :pending, -> { where(status: "pending") }
     scope :acknowledged, -> { where(status: "acknowledged") }
@@ -31,10 +33,14 @@ module RailsMarkup
     scope :recent, -> { order(created_at: :desc) }
 
     def acknowledge!
+      raise "Cannot acknowledge a #{status} annotation" unless status == "pending"
+
       update!(status: "acknowledged")
     end
 
     def resolve!(summary: nil)
+      raise "Cannot resolve a #{status} annotation" unless status.in?(%w[pending acknowledged])
+
       transaction do
         add_thread_entry(role: "agent", message: summary) if summary.present?
         update!(status: "resolved")
@@ -42,6 +48,8 @@ module RailsMarkup
     end
 
     def dismiss!(reason: nil)
+      raise "Cannot dismiss a #{status} annotation" unless status.in?(%w[pending acknowledged])
+
       transaction do
         add_thread_entry(role: "agent", message: reason) if reason.present?
         update!(status: "dismissed")
@@ -75,6 +83,10 @@ module RailsMarkup
 
     def add_thread_entry(role:, message:)
       self.thread = thread + [{ "role" => role, "message" => message, "timestamp" => Time.current.iso8601 }]
+    end
+
+    def thread_must_be_array
+      errors.add(:thread, "must be an array") unless thread.is_a?(Array)
     end
   end
 end

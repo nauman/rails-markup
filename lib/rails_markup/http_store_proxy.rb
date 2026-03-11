@@ -38,8 +38,13 @@ module RailsMarkup
     end
 
     def get_annotation(id)
-      # Search all pending for this annotation
-      all_pending.find { |a| a["id"] == id }
+      # Search all sessions for this annotation (not just pending)
+      list_sessions.each do |session|
+        (session["annotations"] || []).each do |ann|
+          return ann if ann["id"] == id
+        end
+      end
+      nil
     end
 
     def create_annotation(session_id:, target:, content:, intent: "change", severity: "suggestion", selected_text: nil, metadata: nil)
@@ -86,7 +91,11 @@ module RailsMarkup
     private
 
     def get(path)
-      resp = Net::HTTP.get_response(@uri.host, path, @uri.port)
+      http = Net::HTTP.new(@uri.host, @uri.port)
+      http.open_timeout = 5
+      http.read_timeout = 10
+      req = Net::HTTP::Get.new(path)
+      resp = http.request(req)
       return nil unless resp.is_a?(Net::HTTPSuccess)
 
       JSON.parse(resp.body)
@@ -97,6 +106,8 @@ module RailsMarkup
 
     def post(path, body)
       http = Net::HTTP.new(@uri.host, @uri.port)
+      http.open_timeout = 5
+      http.read_timeout = 10
       req = Net::HTTP::Post.new(path, "Content-Type" => "application/json")
       req.body = body.to_json
       resp = http.request(req)

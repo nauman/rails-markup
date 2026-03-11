@@ -11,12 +11,16 @@ module RailsMarkup
     Annotation = Struct.new(:id, :session_id, :target, :content, :intent, :severity, :status,
                             :selected_text, :metadata, :created_at, :thread, keyword_init: true)
 
+    MAX_SESSIONS = 100
+    SESSION_TTL  = 4 * 3600 # 4 hours
+
     attr_reader :sessions
 
     def initialize
-      @sessions    = {}
-      @subscribers = [] # SSE callbacks: [session_id, callback]
-      @mutex       = Mutex.new
+      @sessions          = {}
+      @annotations_index = {} # id -> annotation (O(1) lookup)
+      @subscribers       = [] # SSE callbacks: [session_id, callback]
+      @mutex             = Mutex.new
     end
 
     # --- Sessions ---
@@ -30,7 +34,10 @@ module RailsMarkup
         created_at: Time.now.iso8601,
         annotations: []
       )
-      @mutex.synchronize { @sessions[id] = session }
+      @mutex.synchronize do
+        evict_stale_sessions
+        @sessions[id] = session
+      end
       session
     end
 
@@ -46,9 +53,6 @@ module RailsMarkup
 
     def create_annotation(session_id:, target:, content:, intent: "change", severity: "suggestion",
                           selected_text: nil, metadata: {})
-      session = get_session(session_id)
-      return nil unless session
-
       id = SecureRandom.hex(8)
       annotation = Annotation.new(
         id: id,
@@ -63,19 +67,22 @@ module RailsMarkup
         created_at: Time.now.iso8601,
         thread: []
       )
-      @mutex.synchronize { session.annotations << annotation }
+
+      # Single mutex block — no TOCTOU gap
+      @mutex.synchronize do
+        session = @sessions[session_id]
+        return nil unless session
+
+        session.annotations << annotation
+        @annotations_index[id] = annotation
+      end
+
       notify(session_id, type: "annotation_created", annotation: serialize_annotation(annotation))
       annotation
     end
 
     def get_annotation(annotation_id)
-      @mutex.synchronize do
-        @sessions.each_value do |session|
-          ann = session.annotations.find { |a| a.id == annotation_id }
-          return ann if ann
-        end
-      end
-      nil
+      @mutex.synchronize { @annotations_index[annotation_id] }
     end
 
     def pending_for_session(session_id)
@@ -180,13 +187,30 @@ module RailsMarkup
     end
 
     def notify(session_id, data)
+      dead = []
       @mutex.synchronize do
-        @subscribers.each do |sid, callback|
+        @subscribers.each do |sub|
+          sid, callback = sub
           next unless sid.nil? || sid == session_id
 
           callback.call(data)
         rescue StandardError
-          # SSE client disconnected — ignore
+          dead << sub
+        end
+        dead.each { |s| @subscribers.delete(s) }
+      end
+    end
+
+    def evict_stale_sessions
+      return if @sessions.size < MAX_SESSIONS
+
+      cutoff = (Time.now - SESSION_TTL).iso8601
+      @sessions.delete_if do |_id, session|
+        if session.created_at < cutoff
+          session.annotations.each { |a| @annotations_index.delete(a.id) }
+          true
+        else
+          false
         end
       end
     end
