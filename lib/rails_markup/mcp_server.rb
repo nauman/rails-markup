@@ -7,8 +7,9 @@ require_relative "mcp_config"
 
 module RailsMarkup
   # MCP (Model Context Protocol) server speaking JSON-RPC 2.0 over stdio.
-  # Exposes 13 tools for AI agents to read and act on browser annotations
-  # (9 local dev tools + 4 production feedback tools).
+  # Exposes 8 unified tools for AI agents to read and act on browser annotations.
+  # Each tool accepts an optional `environment` param ("development"|"production")
+  # to route to the correct backend (default: "development").
   #
   # Configuration (via .mcp.json env vars, set by `bin/markup configure`):
   #   RAILS_MARKUP_DEV_URL    — local Rails server URL (auto-detected on install)
@@ -16,24 +17,23 @@ module RailsMarkup
   #   RAILS_MARKUP_PROD_TOKEN — production API token
   #   RAILS_MARKUP_MOUNT_PATH — engine mount path (default: /admin/annotations)
   class McpServer
+    ENV_SCHEMA = {
+      environment: {
+        type: "string",
+        enum: %w[development production],
+        description: "Target environment (default: development)"
+      }
+    }.freeze
+
     TOOLS = [
       {
-        name: "rails_markup_list_sessions",
-        description: "List all active annotation sessions",
+        name: "rails_markup_sessions",
+        description: "List all active annotation sessions (dev only)",
         inputSchema: { type: "object", properties: {}, required: [] }
       },
       {
-        name: "rails_markup_get_session",
-        description: "Get a session with all its annotations",
-        inputSchema: {
-          type: "object",
-          properties: { sessionId: { type: "string", description: "The session ID to get" } },
-          required: ["sessionId"]
-        }
-      },
-      {
-        name: "rails_markup_get_pending",
-        description: "Get all pending (unacknowledged) annotations for a session",
+        name: "rails_markup_session",
+        description: "Get a session with all its annotations (dev only)",
         inputSchema: {
           type: "object",
           properties: { sessionId: { type: "string", description: "The session ID" } },
@@ -41,12 +41,20 @@ module RailsMarkup
         }
       },
       {
-        name: "rails_markup_get_all_pending",
-        description: "Get all pending annotations across ALL sessions",
-        inputSchema: { type: "object", properties: {}, required: [] }
+        name: "rails_markup_pending",
+        description: "Get all pending annotations. Pass sessionId to filter by session.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            sessionId: { type: "string", description: "Optional session ID to filter" },
+            markAcknowledged: { type: "boolean", description: "Acknowledge each annotation after fetching (default: true, production only)" },
+            **ENV_SCHEMA
+          },
+          required: []
+        }
       },
       {
-        name: "rails_markup_watch_annotations",
+        name: "rails_markup_watch",
         description: "Block until new annotations appear, then return them as a batch. Use in a loop for hands-free processing.",
         inputSchema: {
           type: "object",
@@ -63,7 +71,10 @@ module RailsMarkup
         description: "Mark an annotation as acknowledged",
         inputSchema: {
           type: "object",
-          properties: { annotationId: { type: "string", description: "The annotation ID" } },
+          properties: {
+            annotationId: { type: "string", description: "The annotation ID" },
+            **ENV_SCHEMA
+          },
           required: ["annotationId"]
         }
       },
@@ -74,7 +85,8 @@ module RailsMarkup
           type: "object",
           properties: {
             annotationId: { type: "string", description: "The annotation ID" },
-            summary: { type: "string", description: "Optional summary of how it was resolved" }
+            summary: { type: "string", description: "Optional summary of how it was resolved" },
+            **ENV_SCHEMA
           },
           required: ["annotationId"]
         }
@@ -86,7 +98,8 @@ module RailsMarkup
           type: "object",
           properties: {
             annotationId: { type: "string", description: "The annotation ID" },
-            reason: { type: "string", description: "Reason for dismissing" }
+            reason: { type: "string", description: "Reason for dismissing" },
+            **ENV_SCHEMA
           },
           required: ["annotationId"]
         }
@@ -98,68 +111,27 @@ module RailsMarkup
           type: "object",
           properties: {
             annotationId: { type: "string", description: "The annotation ID" },
-            message: { type: "string", description: "The reply message" }
-          },
-          required: ["annotationId", "message"]
-        }
-      },
-      # -- Production feedback tools --
-      {
-        name: "rails_markup_fetch_production",
-        description: "Fetch all pending annotations from the production app. Returns annotations submitted via the admin feedback toolbar.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            baseUrl: { type: "string", description: "Production base URL (default: env RAILS_MARKUP_PROD_URL)" },
-            token: { type: "string", description: "API token (default: env RAILS_MARKUP_PROD_TOKEN)" },
-            markAcknowledged: { type: "boolean", description: "Acknowledge each annotation after fetching (default: true)" }
-          },
-          required: []
-        }
-      },
-      {
-        name: "rails_markup_resolve_production",
-        description: "Resolve a production annotation with a summary of what was fixed",
-        inputSchema: {
-          type: "object",
-          properties: {
-            annotationId: { type: "string", description: "The annotation ID" },
-            summary: { type: "string", description: "Summary of how it was resolved" },
-            baseUrl: { type: "string", description: "Production base URL (default: env RAILS_MARKUP_PROD_URL)" },
-            token: { type: "string", description: "API token (default: env RAILS_MARKUP_PROD_TOKEN)" }
-          },
-          required: ["annotationId"]
-        }
-      },
-      {
-        name: "rails_markup_dismiss_production",
-        description: "Dismiss a production annotation with a reason",
-        inputSchema: {
-          type: "object",
-          properties: {
-            annotationId: { type: "string", description: "The annotation ID" },
-            reason: { type: "string", description: "Reason for dismissing" },
-            baseUrl: { type: "string", description: "Production base URL (default: env RAILS_MARKUP_PROD_URL)" },
-            token: { type: "string", description: "API token (default: env RAILS_MARKUP_PROD_TOKEN)" }
-          },
-          required: ["annotationId"]
-        }
-      },
-      {
-        name: "rails_markup_reply_production",
-        description: "Reply to a production annotation thread",
-        inputSchema: {
-          type: "object",
-          properties: {
-            annotationId: { type: "string", description: "The annotation ID" },
             message: { type: "string", description: "The reply message" },
-            baseUrl: { type: "string", description: "Production base URL (default: env RAILS_MARKUP_PROD_URL)" },
-            token: { type: "string", description: "API token (default: env RAILS_MARKUP_PROD_TOKEN)" }
+            **ENV_SCHEMA
           },
           required: ["annotationId", "message"]
         }
       }
     ].freeze
+
+    # Legacy tool names → new handler + injected args.
+    # Removed after v1.3.0.
+    LEGACY_ALIASES = {
+      "rails_markup_list_sessions"   => { handler: "rails_markup_sessions" },
+      "rails_markup_get_session"     => { handler: "rails_markup_session" },
+      "rails_markup_get_pending"     => { handler: "rails_markup_pending" },
+      "rails_markup_get_all_pending" => { handler: "rails_markup_pending" },
+      "rails_markup_watch_annotations" => { handler: "rails_markup_watch" },
+      "rails_markup_fetch_production"  => { handler: "rails_markup_pending", inject: { "environment" => "production" } },
+      "rails_markup_resolve_production" => { handler: "rails_markup_resolve", inject: { "environment" => "production" } },
+      "rails_markup_dismiss_production" => { handler: "rails_markup_dismiss", inject: { "environment" => "production" } },
+      "rails_markup_reply_production"   => { handler: "rails_markup_reply", inject: { "environment" => "production" } }
+    }.freeze
 
     def initialize(store:, input: $stdin, output: $stdout, dir: Dir.pwd)
       @store  = store
@@ -218,8 +190,6 @@ module RailsMarkup
 
       case method
       when "initialize"
-        # Negotiate protocol version — prefer client's requested version if we support it,
-        # fall back to latest we support. Claude Code may send 2025-06-18.
         client_version = params.dig("protocolVersion")
         supported = %w[2025-06-18 2025-03-26 2024-11-05]
         negotiated = supported.include?(client_version) ? client_version : supported.first
@@ -243,57 +213,79 @@ module RailsMarkup
     end
 
     def handle_tool_call(id, name, args)
+      # Resolve legacy aliases
+      if (legacy = LEGACY_ALIASES[name])
+        $stderr.puts "[rails-markup] DEPRECATED: #{name} → use #{legacy[:handler]}"
+        name = legacy[:handler]
+        args = args.merge(legacy[:inject]) if legacy[:inject]
+      end
+
+      env = args["environment"] || "development"
+      production = env == "production"
+
       result = case name
-               when "rails_markup_list_sessions"
+               when "rails_markup_sessions"
                  handle_local_or_proxy(:list_sessions, args) {
                    sessions = @store.list_sessions
                    sessions.map { |s| @store.serialize_session(s) }
                  }
-               when "rails_markup_get_session"
+               when "rails_markup_session"
                  handle_local_or_proxy(:get_session, args) {
                    session = @store.get_session(args["sessionId"])
                    session ? @store.serialize_session(session) : { error: "Session not found" }
                  }
-               when "rails_markup_get_pending"
-                 handle_local_or_proxy(:get_pending, args) {
-                   pending = @store.pending_for_session(args["sessionId"])
-                   pending.map { |a| @store.serialize_annotation(a) }
-                 }
-               when "rails_markup_get_all_pending"
-                 handle_local_or_proxy(:get_all_pending, args) {
-                   pending = @store.all_pending
-                   pending.map { |a| @store.serialize_annotation(a) }
-                 }
-               when "rails_markup_watch_annotations"
+               when "rails_markup_pending"
+                 if production
+                   handle_fetch_production(args)
+                 elsif args["sessionId"]
+                   handle_local_or_proxy(:get_pending, args) {
+                     pending = @store.pending_for_session(args["sessionId"])
+                     pending.map { |a| @store.serialize_annotation(a) }
+                   }
+                 else
+                   handle_local_or_proxy(:get_all_pending, args) {
+                     pending = @store.all_pending
+                     pending.map { |a| @store.serialize_annotation(a) }
+                   }
+                 end
+               when "rails_markup_watch"
                  handle_watch(args)
                when "rails_markup_acknowledge"
-                 handle_local_or_proxy(:acknowledge, args) {
-                   ann = @store.acknowledge(args["annotationId"])
-                   ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
-                 }
+                 if production
+                   handle_production_action(args, "acknowledge")
+                 else
+                   handle_local_or_proxy(:acknowledge, args) {
+                     ann = @store.acknowledge(args["annotationId"])
+                     ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
+                   }
+                 end
                when "rails_markup_resolve"
-                 handle_local_or_proxy(:resolve, args) {
-                   ann = @store.resolve(args["annotationId"], summary: args["summary"])
-                   ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
-                 }
+                 if production
+                   handle_production_action(args, "resolve", summary: args["summary"])
+                 else
+                   handle_local_or_proxy(:resolve, args) {
+                     ann = @store.resolve(args["annotationId"], summary: args["summary"])
+                     ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
+                   }
+                 end
                when "rails_markup_dismiss"
-                 handle_local_or_proxy(:dismiss, args) {
-                   ann = @store.dismiss(args["annotationId"], reason: args["reason"])
-                   ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
-                 }
+                 if production
+                   handle_production_action(args, "dismiss", reason: args["reason"])
+                 else
+                   handle_local_or_proxy(:dismiss, args) {
+                     ann = @store.dismiss(args["annotationId"], reason: args["reason"])
+                     ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
+                   }
+                 end
                when "rails_markup_reply"
-                 handle_local_or_proxy(:reply, args) {
-                   ann = @store.reply(args["annotationId"], message: args["message"])
-                   ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
-                 }
-               when "rails_markup_fetch_production"
-                 handle_fetch_production(args)
-               when "rails_markup_resolve_production"
-                 handle_production_action(args, "resolve", summary: args["summary"])
-               when "rails_markup_dismiss_production"
-                 handle_production_action(args, "dismiss", reason: args["reason"])
-               when "rails_markup_reply_production"
-                 handle_production_action(args, "reply", message: args["message"])
+                 if production
+                   handle_production_action(args, "reply", message: args["message"])
+                 else
+                   handle_local_or_proxy(:reply, args) {
+                     ann = @store.reply(args["annotationId"], message: args["message"])
+                     ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
+                   }
+                 end
                else
                  return error_response(id, -32602, "Unknown tool: #{name}")
                end
@@ -355,7 +347,7 @@ module RailsMarkup
     def handle_fetch_production(args)
       base = args["baseUrl"] || prod_url
       token = args["token"] || prod_token
-      return { error: "No base URL. Run: bin/markup configure --prod-url=URL" } unless base
+      return { error: "No production URL. Run: bin/markup configure --prod-url=URL" } unless base
 
       mark_acknowledged = args["markAcknowledged"] != false
       api = external_api_base(base)
@@ -379,7 +371,7 @@ module RailsMarkup
       base = args["baseUrl"] || prod_url
       token = args["token"] || prod_token
       annotation_id = args["annotationId"]
-      return { error: "No base URL. Run: bin/markup configure --prod-url=URL" } unless base
+      return { error: "No production URL. Run: bin/markup configure --prod-url=URL" } unless base
       return { error: "No annotationId provided." } unless annotation_id
 
       api = external_api_base(base)

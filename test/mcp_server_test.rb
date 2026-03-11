@@ -9,6 +9,8 @@ class McpServerTest < Minitest::Test
     @output = StringIO.new
   end
 
+  # ── Protocol ───────────────────────────────────────────────
+
   def test_initialize_response
     input = StringIO.new(jsonrpc_request(1, "initialize", { protocolVersion: "2024-11-05" }))
     mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
@@ -38,122 +40,201 @@ class McpServerTest < Minitest::Test
     assert_equal "2025-06-18", response["result"]["protocolVersion"]
   end
 
-  def test_tools_list
+  # ── Tools list (8 unified tools) ───────────────────────────
+
+  def test_tools_list_returns_8_tools
     input = StringIO.new(jsonrpc_request(1, "tools/list"))
     mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
     mcp.start
 
     response = parse_output
     tools = response["result"]["tools"]
-    assert_equal 13, tools.size
-    assert_equal "rails_markup_list_sessions", tools.first["name"]
+    assert_equal 8, tools.size
   end
 
-  def test_list_sessions_empty
-    input = StringIO.new(jsonrpc_request(1, "tools/call", { name: "rails_markup_list_sessions", arguments: {} }))
+  def test_tools_list_has_unified_names
+    input = StringIO.new(jsonrpc_request(1, "tools/list"))
     mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
     mcp.start
 
-    response = parse_output
-    content = JSON.parse(response["result"]["content"].first["text"])
-    assert_equal [], content
+    names = parse_output["result"]["tools"].map { |t| t["name"] }
+    expected = %w[
+      rails_markup_sessions
+      rails_markup_session
+      rails_markup_pending
+      rails_markup_watch
+      rails_markup_acknowledge
+      rails_markup_resolve
+      rails_markup_dismiss
+      rails_markup_reply
+    ]
+    assert_equal expected, names
   end
 
-  def test_list_sessions_with_data
+  def test_pending_tool_has_environment_param
+    input = StringIO.new(jsonrpc_request(1, "tools/list"))
+    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
+    mcp.start
+
+    pending = parse_output["result"]["tools"].find { |t| t["name"] == "rails_markup_pending" }
+    props = pending["inputSchema"]["properties"]
+    assert props.key?("environment"), "pending tool should have environment param"
+    assert_equal %w[development production], props["environment"]["enum"]
+  end
+
+  # ── Sessions (new names) ───────────────────────────────────
+
+  def test_sessions_empty
+    result = call_tool("rails_markup_sessions")
+    assert_equal [], result
+  end
+
+  def test_sessions_with_data
     @store.create_session(url: "http://example.com")
-    input = StringIO.new(jsonrpc_request(1, "tools/call", { name: "rails_markup_list_sessions", arguments: {} }))
-    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
-    mcp.start
-
-    response = parse_output
-    content = JSON.parse(response["result"]["content"].first["text"])
-    assert_equal 1, content.size
+    result = call_tool("rails_markup_sessions")
+    assert_equal 1, result.size
   end
 
-  def test_get_session
+  def test_session_by_id
     session = @store.create_session(url: "http://example.com")
-    input = StringIO.new(jsonrpc_request(1, "tools/call", {
-      name: "rails_markup_get_session", arguments: { sessionId: session.id }
-    }))
-    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
-    mcp.start
-
-    response = parse_output
-    content = JSON.parse(response["result"]["content"].first["text"])
-    assert_equal session.id, content["id"]
+    result = call_tool("rails_markup_session", sessionId: session.id)
+    assert_equal session.id, result["id"]
   end
 
-  def test_get_all_pending
+  # ── Pending (unified: replaces get_all_pending + get_pending) ──
+
+  def test_pending_all
     session = @store.create_session(url: "http://example.com")
     @store.create_annotation(session_id: session.id, target: "div", content: "fix this")
-    input = StringIO.new(jsonrpc_request(1, "tools/call", {
-      name: "rails_markup_get_all_pending", arguments: {}
-    }))
-    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
-    mcp.start
-
-    response = parse_output
-    content = JSON.parse(response["result"]["content"].first["text"])
-    assert_equal 1, content.size
-    assert_equal "fix this", content.first["content"]
+    result = call_tool("rails_markup_pending")
+    assert_equal 1, result.size
+    assert_equal "fix this", result.first["content"]
   end
 
-  def test_resolve_annotation
+  def test_pending_by_session
     session = @store.create_session(url: "http://example.com")
-    ann = @store.create_annotation(session_id: session.id, target: "div", content: "fix this")
-    input = StringIO.new(jsonrpc_request(1, "tools/call", {
-      name: "rails_markup_resolve", arguments: { annotationId: ann.id, summary: "Fixed padding" }
-    }))
-    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
-    mcp.start
-
-    response = parse_output
-    content = JSON.parse(response["result"]["content"].first["text"])
-    assert_equal "resolved", content["status"]
+    @store.create_annotation(session_id: session.id, target: "div", content: "fix this")
+    result = call_tool("rails_markup_pending", sessionId: session.id)
+    assert_equal 1, result.size
   end
 
-  def test_dismiss_annotation
+  def test_pending_production_without_url_returns_error
+    result = call_tool("rails_markup_pending", environment: "production")
+    assert_match(/No production URL/, result["error"])
+  end
+
+  # ── Actions (new names) ────────────────────────────────────
+
+  def test_acknowledge
+    ann = create_test_annotation
+    result = call_tool("rails_markup_acknowledge", annotationId: ann.id)
+    assert_equal "acknowledged", result["status"]
+  end
+
+  def test_resolve
+    ann = create_test_annotation
+    result = call_tool("rails_markup_resolve", annotationId: ann.id, summary: "Fixed padding")
+    assert_equal "resolved", result["status"]
+  end
+
+  def test_dismiss
+    ann = create_test_annotation
+    result = call_tool("rails_markup_dismiss", annotationId: ann.id, reason: "Working as intended")
+    assert_equal "dismissed", result["status"]
+  end
+
+  def test_reply
+    ann = create_test_annotation
+    result = call_tool("rails_markup_reply", annotationId: ann.id, message: "Can you clarify?")
+    assert_equal 1, result["thread"].size
+    assert_equal "Can you clarify?", result["thread"].first["message"]
+  end
+
+  # ── Production environment routing ─────────────────────────
+
+  def test_resolve_production_without_url_returns_error
+    ann = create_test_annotation
+    result = call_tool("rails_markup_resolve", annotationId: ann.id, environment: "production")
+    assert_match(/No production URL/, result["error"])
+  end
+
+  def test_dismiss_production_without_url_returns_error
+    ann = create_test_annotation
+    result = call_tool("rails_markup_dismiss", annotationId: ann.id, environment: "production")
+    assert_match(/No production URL/, result["error"])
+  end
+
+  def test_reply_production_without_url_returns_error
+    ann = create_test_annotation
+    result = call_tool("rails_markup_reply", annotationId: ann.id, message: "test", environment: "production")
+    assert_match(/No production URL/, result["error"])
+  end
+
+  def test_acknowledge_production_without_url_returns_error
+    ann = create_test_annotation
+    result = call_tool("rails_markup_acknowledge", annotationId: ann.id, environment: "production")
+    assert_match(/No production URL/, result["error"])
+  end
+
+  # ── Legacy aliases ─────────────────────────────────────────
+
+  def test_legacy_get_all_pending_dispatches_to_pending
     session = @store.create_session(url: "http://example.com")
-    ann = @store.create_annotation(session_id: session.id, target: "div", content: "change this")
-    input = StringIO.new(jsonrpc_request(1, "tools/call", {
-      name: "rails_markup_dismiss", arguments: { annotationId: ann.id, reason: "Working as intended" }
-    }))
-    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
-    mcp.start
-
-    response = parse_output
-    content = JSON.parse(response["result"]["content"].first["text"])
-    assert_equal "dismissed", content["status"]
+    @store.create_annotation(session_id: session.id, target: "div", content: "fix this")
+    result = call_tool("rails_markup_get_all_pending")
+    assert_equal 1, result.size
   end
 
-  def test_reply_to_annotation
+  def test_legacy_list_sessions_dispatches_to_sessions
+    @store.create_session(url: "http://example.com")
+    result = call_tool("rails_markup_list_sessions")
+    assert_equal 1, result.size
+  end
+
+  def test_legacy_get_session_dispatches_to_session
     session = @store.create_session(url: "http://example.com")
-    ann = @store.create_annotation(session_id: session.id, target: "div", content: "fix this")
-    input = StringIO.new(jsonrpc_request(1, "tools/call", {
-      name: "rails_markup_reply", arguments: { annotationId: ann.id, message: "Can you clarify?" }
-    }))
-    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
-    mcp.start
-
-    response = parse_output
-    content = JSON.parse(response["result"]["content"].first["text"])
-    assert_equal 1, content["thread"].size
-    assert_equal "Can you clarify?", content["thread"].first["message"]
+    result = call_tool("rails_markup_get_session", sessionId: session.id)
+    assert_equal session.id, result["id"]
   end
 
-  def test_acknowledge_annotation
+  def test_legacy_get_pending_dispatches_to_pending
     session = @store.create_session(url: "http://example.com")
-    ann = @store.create_annotation(session_id: session.id, target: "div", content: "note")
-    input = StringIO.new(jsonrpc_request(1, "tools/call", {
-      name: "rails_markup_acknowledge", arguments: { annotationId: ann.id }
-    }))
-    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
-    mcp.start
-
-    response = parse_output
-    content = JSON.parse(response["result"]["content"].first["text"])
-    assert_equal "acknowledged", content["status"]
+    @store.create_annotation(session_id: session.id, target: "div", content: "fix")
+    result = call_tool("rails_markup_get_pending", sessionId: session.id)
+    assert_equal 1, result.size
   end
+
+  def test_legacy_watch_annotations_dispatches_to_watch
+    # Just verify it dispatches without error (watch would block, so we can't fully test)
+    assert RailsMarkup::McpServer::LEGACY_ALIASES.key?("rails_markup_watch_annotations")
+    assert_equal "rails_markup_watch", RailsMarkup::McpServer::LEGACY_ALIASES["rails_markup_watch_annotations"][:handler]
+  end
+
+  def test_legacy_fetch_production_injects_environment
+    result = call_tool("rails_markup_fetch_production")
+    assert_match(/No production URL/, result["error"])
+  end
+
+  def test_legacy_resolve_production_injects_environment
+    ann = create_test_annotation
+    result = call_tool("rails_markup_resolve_production", annotationId: ann.id)
+    assert_match(/No production URL/, result["error"])
+  end
+
+  def test_legacy_emits_deprecation_to_stderr
+    session = @store.create_session(url: "http://example.com")
+    @store.create_annotation(session_id: session.id, target: "div", content: "fix")
+
+    stderr_output = capture_stderr do
+      call_tool("rails_markup_get_all_pending")
+    end
+
+    assert_match(/DEPRECATED/, stderr_output)
+    assert_match(/rails_markup_get_all_pending/, stderr_output)
+    assert_match(/rails_markup_pending/, stderr_output)
+  end
+
+  # ── Unknown tool ───────────────────────────────────────────
 
   def test_unknown_tool
     input = StringIO.new(jsonrpc_request(1, "tools/call", {
@@ -166,6 +247,8 @@ class McpServerTest < Minitest::Test
     assert response["error"]
     assert_equal(-32602, response["error"]["code"])
   end
+
+  # ── Misc ───────────────────────────────────────────────────
 
   def test_ping
     input = StringIO.new(jsonrpc_request(1, "ping"))
@@ -191,6 +274,8 @@ class McpServerTest < Minitest::Test
     assert_equal 1, responses[0]["id"]
     assert_equal 2, responses[1]["id"]
   end
+
+  # ── Config ─────────────────────────────────────────────────
 
   def test_mount_path_defaults_to_admin_annotations
     mcp = RailsMarkup::McpServer.new(store: @store, input: StringIO.new, output: @output)
@@ -218,19 +303,6 @@ class McpServerTest < Minitest::Test
       mcp.send(:external_api_base, "https://myapp.com")
   ensure
     ENV.delete("RAILS_MARKUP_MOUNT_PATH")
-  end
-
-  def test_fetch_production_without_url_returns_error
-    input = StringIO.new(jsonrpc_request(1, "tools/call", {
-      name: "rails_markup_fetch_production", arguments: {}
-    }))
-    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
-    mcp.start
-
-    response = parse_output
-    content = JSON.parse(response["result"]["content"].first["text"])
-    assert_match(/No base URL/, content["error"])
-    assert_match(/bin\/markup configure/, content["error"])
   end
 
   def test_config_falls_back_to_mcp_json
@@ -287,5 +359,29 @@ class McpServerTest < Minitest::Test
 
   def parse_output
     JSON.parse(@output.string.lines.first)
+  end
+
+  # Call a tool and return the parsed content
+  def call_tool(name, **args)
+    @output = StringIO.new
+    input = StringIO.new(jsonrpc_request(1, "tools/call", { name: name, arguments: args.transform_keys(&:to_s) }))
+    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
+    mcp.start
+    response = parse_output
+    JSON.parse(response["result"]["content"].first["text"])
+  end
+
+  def create_test_annotation
+    session = @store.create_session(url: "http://example.com")
+    @store.create_annotation(session_id: session.id, target: "div", content: "fix this")
+  end
+
+  def capture_stderr
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    yield
+    $stderr.string
+  ensure
+    $stderr = old_stderr
   end
 end
