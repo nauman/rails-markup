@@ -7,6 +7,8 @@ require_relative "mcp_config"
 
 module RailsMarkup
   class Cli < Thor
+    require_relative "cli/initializer_writer"
+    require_relative "cli/setup_wizard"
     # ── Lipgloss styles ────────────────────────────────────────
     HEADER_STYLE = Lipgloss::Style.new.bold(true).foreground("#FFFFFF").background("#5C4AE4").padding(0, 1)
     ODD_STYLE    = Lipgloss::Style.new.foreground("#E2E2E2").padding(0, 1)
@@ -20,6 +22,19 @@ module RailsMarkup
     def server
       srv = RailsMarkup::Server.new(port: options[:port])
       srv.start
+    end
+
+    desc "init", "Interactive setup wizard"
+    def init
+      wizard = Cli::SetupWizard.new(dir: Dir.pwd)
+      Bubbletea.run(wizard)
+      if wizard.completed
+        say ""
+        say "Setup complete!", :green
+      else
+        say ""
+        say "Setup cancelled.", :yellow
+      end
     end
 
     desc "mcp", "Start MCP-only server (stdio)"

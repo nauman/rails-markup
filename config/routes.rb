@@ -5,6 +5,7 @@ RailsMarkup::Engine.routes.draw do
   root to: "dashboard#index"
   resources :annotations, only: [:show, :update], controller: "dashboard", constraints: { id: /\d+/ }
   post "dismiss_all", to: "dashboard#dismiss_all"
+  get "load_more", to: "dashboard#load_more", as: :load_more
   get "board", to: "dashboard#board"
   get "export.csv", to: "dashboard#export_csv", as: :export_csv
   get "export.json", to: "dashboard#export_json", as: :export_json

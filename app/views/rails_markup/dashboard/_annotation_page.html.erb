@@ -1,0 +1,13 @@
+<% @annotations.each do |annotation| %>
+  <%= render "annotation_card", annotation: annotation %>
+<% end %>
+
+<% if @next_page %>
+  <div class="rm-load-more">
+    <button class="rm-load-more-btn"
+            data-next-url="<%= rails_markup.load_more_path(status: @current_status, page: @next_page, page_url: params[:page_url], q: params[:q], author: params[:author]) %>"
+            onclick="rmLoadMore(this)">
+      Load more (<%= @remaining %> remaining)
+    </button>
+  </div>
+<% end %>

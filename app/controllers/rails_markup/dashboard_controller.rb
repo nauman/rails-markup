@@ -65,6 +65,10 @@ module RailsMarkup
       @current_page = (params[:page] || 1).to_i
       @annotations = scope.limit(per_page).offset((@current_page - 1) * per_page)
 
+      loaded_so_far = @current_page * per_page
+      @remaining = [@filtered_count - loaded_so_far, 0].max
+      @next_page = @remaining > 0 ? @current_page + 1 : nil
+
       @page_urls = Annotation.distinct.pluck(:page_url).sort
       @current_page_url = params[:page_url]
       @authors = Annotation.distinct_authors
@@ -74,6 +78,25 @@ module RailsMarkup
 
     # GET /feedback/annotations/:id
     def show
+    end
+
+    # GET /feedback/load_more
+    def load_more
+      @current_status = ALLOWED_STATUSES.include?(params[:status]) ? params[:status] : "pending"
+      scope = build_base_scope.recent
+      scope = scope.where(status: @current_status) unless @current_status == "all"
+      scope = scope.search(params[:q]) if params[:q].present?
+      scope = scope.by_author(params[:author]) if params[:author].present?
+
+      filtered_count = scope.count
+      @current_page = (params[:page] || 1).to_i
+      @annotations = scope.limit(per_page).offset((@current_page - 1) * per_page)
+
+      loaded_so_far = @current_page * per_page
+      @remaining = [filtered_count - loaded_so_far, 0].max
+      @next_page = @remaining > 0 ? @current_page + 1 : nil
+
+      render partial: "annotation_page", layout: false
     end
 
     # GET /feedback/board

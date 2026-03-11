@@ -92,7 +92,7 @@ end
 
 Visit `/admin/annotations` for the full dashboard:
 
-- **List view** — status filters, search, author filter, pagination
+- **List view** — status filters, search, author filter, load-more pagination
 - **Board view** — kanban with drag-and-drop status transitions
 - **Export** — CSV and JSON downloads (respects current filters)
 - **Detail panel** — full content, metadata, screenshots, thread
@@ -119,6 +119,7 @@ Screenshots are stored as base64 in annotation metadata and displayed in the das
 ## CLI
 
 ```bash
+bin/markup init                      # Interactive setup wizard (TUI)
 bin/markup server                    # HTTP + MCP server
 bin/markup mcp                       # MCP-only server (stdio)
 bin/markup fetch                     # Fetch pending from dev
@@ -127,6 +128,18 @@ bin/markup configure                 # Set .mcp.json env vars
 bin/markup status                    # Show config (tokens masked)
 bin/markup setup-production --url=URL  # Generate token + configure
 ```
+
+### Setup Wizard
+
+Run `bin/markup init` for an interactive setup that walks you through:
+
+1. Toolbar accent color (indigo, amber, blue, emerald, rose)
+2. Toolbar position (bottom-left, bottom-right, top-left, top-right)
+3. Toolbar size (slim, compact, default)
+4. Screenshot capture (on/off)
+5. Production URL (optional)
+
+Writes `config/initializers/rails_markup.rb` and updates `.mcp.json` automatically.
 
 ## MCP Setup
 

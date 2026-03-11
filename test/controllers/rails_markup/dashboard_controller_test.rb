@@ -179,6 +179,46 @@ module RailsMarkup
       assert data.first.key?("id")
     end
 
+    # --- Load more ---
+
+    test "load_more returns cards without layout" do
+      get rails_markup.load_more_path(status: "all", page: 1)
+      assert_response :success
+      # Should not contain full HTML layout
+      refute_match(/<html/, response.body)
+    end
+
+    test "load_more respects status filter" do
+      get rails_markup.load_more_path(status: "pending", page: 1)
+      assert_response :success
+    end
+
+    test "load_more respects search and author filters" do
+      Annotation.create!(content: "Searchable item", page_url: "/t", metadata: { "author" => "FilterAuthor" })
+
+      get rails_markup.load_more_path(status: "all", q: "Searchable", author: "FilterAuthor", page: 1)
+      assert_response :success
+    end
+
+    test "load_more shows remaining count when more pages" do
+      # Create enough annotations to have multiple pages (per_page defaults to 25)
+      30.times do |i|
+        Annotation.create!(content: "Bulk annotation #{i}", page_url: "/bulk", status: "pending")
+      end
+
+      get rails_markup.load_more_path(status: "pending", page: 1)
+      assert_response :success
+      assert_match(/remaining/, response.body)
+    end
+
+    test "index no longer renders page-number pills" do
+      get rails_markup.root_path(status: "all")
+      assert_response :success
+      # Old pagination pills used rm-pill class for page numbers
+      # The filter pills still use rm-pill but page number pills should be gone
+      refute_select ".rm-filters a.rm-pill", text: /^\d+$/
+    end
+
     test "export_csv respects status filter" do
       get rails_markup.export_csv_path(status: "pending")
       assert_response :success
