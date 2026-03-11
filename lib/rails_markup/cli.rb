@@ -43,13 +43,13 @@ module RailsMarkup
       if env_updates.empty?
         say "No options provided. Usage:", :yellow
         say ""
-        say "  rails-markup configure --prod-url URL --prod-token TOKEN"
-        say "  rails-markup configure --dev-url URL --dev-token TOKEN"
+        say "  bin/markup configure --dev-url http://localhost:3000"
+        say "  bin/markup configure --prod-url URL --prod-token TOKEN"
         say ""
-        say "Options:"
-        McpConfig::ENV_KEYS.each do |opt, env_key|
-          say "  --#{opt.tr('_', '-')} VALUE    sets #{env_key}"
-        end
+        say "  Dev needs only a URL (no token). Production requires both."
+        say ""
+        say "  Or run: bin/markup setup-production --url=https://yourapp.com"
+        say ""
         return
       end
 
