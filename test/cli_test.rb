@@ -170,6 +170,19 @@ class CliTest < Minitest::Test
     assert_match(/No production token/, output)
   end
 
+  # -- resolve-all --
+
+  def test_resolve_all_without_url_shows_error
+    output = capture_output { run_cli("resolve-all") }
+    assert_match(/No dev URL/, output)
+  end
+
+  def test_resolve_all_production_without_token_shows_error
+    run_cli("configure", "--prod-url", "https://example.com")
+    output = capture_output { run_cli("resolve-all", "--production") }
+    assert_match(/No production token/, output)
+  end
+
   # -- resolve --
 
   def test_resolve_without_id_shows_error
@@ -246,6 +259,7 @@ class CliTest < Minitest::Test
     assert_match(/reply/, output)
     assert_match(/acknowledge/, output)
     assert_match(/setup-production/, output)
+    assert_match(/resolve-all/, output)
     assert_match(/sessions/, output)
     assert_match(/watch/, output)
   end

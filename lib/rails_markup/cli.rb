@@ -186,6 +186,36 @@ module RailsMarkup
       annotations.each { |ann| render_annotation(ann) }
     end
 
+    desc "resolve-all", "Resolve all pending annotations"
+    method_option :summary, type: :string, desc: "Summary applied to all"
+    method_option :production, type: :boolean, default: false, desc: "Target production"
+    def resolve_all
+      env = resolve_env(options[:production])
+      return unless env
+
+      annotations = fetch_pending_from(env)
+      return unless annotations
+
+      if annotations.empty?
+        say "No pending annotations.", :yellow
+        return
+      end
+
+      resolved = 0
+      annotations.each do |ann|
+        result = patch_annotation(env, ann["id"], "resolve", summary: options[:summary])
+        if result
+          $stdout.puts "#{SUCCESS_STYLE.render("Resolved")} ##{ann["id"]}  #{HINT_STYLE.render(ann["content"].to_s[0, 50])}"
+          resolved += 1
+        else
+          $stdout.puts "#{ERROR_STYLE.render("Failed")}  ##{ann["id"]}"
+        end
+      end
+
+      say ""
+      say "#{resolved}/#{annotations.size} annotations resolved.", :green
+    end
+
     desc "resolve ID", "Resolve an annotation with a summary"
     method_option :summary, type: :string, desc: "Summary of how it was resolved"
     method_option :production, type: :boolean, default: false, desc: "Target production"
