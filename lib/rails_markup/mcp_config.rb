@@ -75,7 +75,7 @@ module RailsMarkup
     def mask(value)
       return value if value.nil? || value.length <= 8
 
-      "#{value[0..3]}#{"*" * (value.length - 4)}"
+      "#{value[0..3]}****"
     end
   end
 end
