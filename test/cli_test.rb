@@ -37,6 +37,14 @@ class CliTest < Minitest::Test
     assert_equal "http://localhost:3004", config.env["RAILS_MARKUP_DEV_URL"]
   end
 
+  def test_configure_sets_mount_path
+    run_cli("configure", "--dev-url", "http://localhost:3000", "--mount-path", "/feedback")
+
+    config = RailsMarkup::McpConfig.new(dir: @dir)
+    assert_equal "/feedback", config.env["RAILS_MARKUP_MOUNT_PATH"]
+    assert_equal "http://localhost:3000", config.env["RAILS_MARKUP_DEV_URL"]
+  end
+
   def test_configure_no_options_shows_usage
     output = capture_output { run_cli("configure") }
     assert_match(/No options provided/, output)
@@ -69,6 +77,58 @@ class CliTest < Minitest::Test
     assert_match(/no env vars set/, output)
   end
 
+  # -- setup-production --
+
+  def test_setup_production_generates_token_and_saves
+    run_cli("setup-production", "--url", "https://myapp.com")
+
+    config = RailsMarkup::McpConfig.new(dir: @dir)
+    assert_equal "https://myapp.com", config.env["RAILS_MARKUP_PROD_URL"]
+
+    token = config.env["RAILS_MARKUP_PROD_TOKEN"]
+    refute_nil token
+    assert token.length >= 20, "Token should be at least 20 chars, got #{token.length}"
+  end
+
+  def test_setup_production_shows_instructions
+    output = capture_output { run_cli("setup-production", "--url", "https://myapp.com") }
+
+    assert_match(/Production token generated/, output)
+    assert_match(/Token:/, output)
+    assert_match(/rails credentials:edit/, output)
+    assert_match(/config\.api_token/, output)
+    assert_match(/bin\/markup fetch --env=production/, output)
+  end
+
+  def test_setup_production_without_url_shows_error
+    output = capture_output { run_cli("setup-production") }
+    assert_match(/Usage/, output)
+  end
+
+  def test_setup_production_preserves_existing_config
+    run_cli("configure", "--dev-url", "http://localhost:3000")
+    run_cli("setup-production", "--url", "https://myapp.com")
+
+    config = RailsMarkup::McpConfig.new(dir: @dir)
+    assert_equal "http://localhost:3000", config.env["RAILS_MARKUP_DEV_URL"]
+    assert_equal "https://myapp.com", config.env["RAILS_MARKUP_PROD_URL"]
+    refute_nil config.env["RAILS_MARKUP_PROD_TOKEN"]
+  end
+
+  # -- fetch --
+
+  def test_fetch_without_url_shows_error
+    output = capture_output { run_cli("fetch") }
+    assert_match(/No dev URL/, output)
+    assert_match(/bin\/markup configure/, output)
+  end
+
+  def test_fetch_production_without_token_shows_error
+    run_cli("configure", "--prod-url", "https://example.com")
+    output = capture_output { run_cli("fetch", "--env=production") }
+    assert_match(/No production token/, output)
+  end
+
   # -- help --
 
   def test_bare_command_shows_help
@@ -76,6 +136,8 @@ class CliTest < Minitest::Test
     assert_match(/server/, output)
     assert_match(/configure/, output)
     assert_match(/status/, output)
+    assert_match(/fetch/, output)
+    assert_match(/setup-production/, output)
   end
 
   private

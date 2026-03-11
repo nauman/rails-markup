@@ -34,6 +34,7 @@ module RailsMarkup
     method_option :prod_token, type: :string, desc: "Production API token (RAILS_MARKUP_PROD_TOKEN)"
     method_option :dev_url,    type: :string, desc: "Dev URL (RAILS_MARKUP_DEV_URL)"
     method_option :dev_token,  type: :string, desc: "Dev API token (RAILS_MARKUP_DEV_TOKEN)"
+    method_option :mount_path, type: :string, desc: "Engine mount path (RAILS_MARKUP_MOUNT_PATH)"
     def configure
       env_updates = McpConfig::ENV_KEYS.each_with_object({}) do |(opt, env_key), hash|
         hash[env_key] = options[opt] if options[opt]
@@ -153,7 +154,7 @@ module RailsMarkup
         return
       end
 
-      token = SecureRandom.base36(24)
+      token = SecureRandom.hex(24)
 
       # Save to .mcp.json
       config = McpConfig.new
