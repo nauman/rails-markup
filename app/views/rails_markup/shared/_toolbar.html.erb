@@ -1,12 +1,18 @@
 <%# Rails Markup annotation toolbar — self-contained, no Tailwind/Stimulus dependency %>
 <script>
-<%= File.read(File.expand_path("../../../assets/javascripts/rails_markup/toolbar.js", __dir__)) %>
+<%== File.read(File.expand_path("../../../assets/javascripts/rails_markup/toolbar.js", __dir__)) %>
 </script>
 <script>
-  document.addEventListener("DOMContentLoaded", function() {
-    RailsMarkupToolbar.init({
+  (function() {
+    var opts = {
       endpoint: "<%= rails_markup.root_path.chomp("/") %>/api",
       accent: "<%= RailsMarkup.config.toolbar_accent %>"
+    };
+    // Init immediately (DOM is ready — script is at end of body)
+    RailsMarkupToolbar.init(opts);
+    // Re-init after Turbo Drive navigations (DOMContentLoaded won't fire again)
+    document.addEventListener("turbo:load", function() {
+      RailsMarkupToolbar.init(opts);
     });
-  });
+  })();
 </script>

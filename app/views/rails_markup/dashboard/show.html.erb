@@ -1,8 +1,12 @@
 <% content_for(:title) { "Annotation ##{@annotation.id}" } %>
 
-<a href="<%= rails_markup.root_path %>" class="rm-back">&larr; Back to dashboard</a>
+<%= render "styles" %>
 
+<turbo-frame id="detail-panel">
 <div class="rm-detail">
+  <%# Close button %>
+  <button type="button" class="rm-back" onclick="var f=this.closest('turbo-frame'); f.innerHTML=''; f.classList.add('rm-panel-empty'); document.querySelectorAll('.rm-card-active').forEach(c => c.classList.remove('rm-card-active'));">&#10005; Close</button>
+
   <%# Header badges %>
   <div class="rm-detail-header">
     <span class="rm-dot rm-dot-<%= @annotation.status %>"></span>
@@ -52,12 +56,12 @@
         <% end %>
       <% end %>
 
-      <button type="button" class="rm-btn rm-btn-success" onclick="document.getElementById('resolve-form').style.display='block'">Resolve</button>
-      <button type="button" class="rm-btn rm-btn-danger" onclick="document.getElementById('dismiss-form').style.display='block'">Dismiss</button>
+      <button type="button" class="rm-btn rm-btn-success" onclick="document.getElementById('resolve-form-<%= @annotation.id %>').style.display='block'">Resolve</button>
+      <button type="button" class="rm-btn rm-btn-danger" onclick="document.getElementById('dismiss-form-<%= @annotation.id %>').style.display='block'">Dismiss</button>
     </div>
 
     <%# Resolve form %>
-    <div id="resolve-form" style="display:none; margin-top: 16px;">
+    <div id="resolve-form-<%= @annotation.id %>" style="display:none; margin-top: 16px;">
       <%= form_tag(rails_markup.annotation_path(@annotation, action_type: "resolve"), method: :patch) do %>
         <div class="rm-form-group">
           <label for="summary">Resolution summary (optional)</label>
@@ -69,7 +73,7 @@
     </div>
 
     <%# Dismiss form %>
-    <div id="dismiss-form" style="display:none; margin-top: 16px;">
+    <div id="dismiss-form-<%= @annotation.id %>" style="display:none; margin-top: 16px;">
       <%= form_tag(rails_markup.annotation_path(@annotation, action_type: "dismiss"), method: :patch) do %>
         <div class="rm-form-group">
           <label for="reason">Dismiss reason (optional)</label>
@@ -112,3 +116,4 @@
     <% end %>
   </div>
 </div>
+</turbo-frame>

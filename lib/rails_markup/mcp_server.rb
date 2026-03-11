@@ -203,31 +203,47 @@ module RailsMarkup
     def handle_tool_call(id, name, args)
       result = case name
                when "rails_markup_list_sessions"
-                 sessions = @store.list_sessions
-                 sessions.map { |s| @store.serialize_session(s) }
+                 handle_local_or_proxy(:list_sessions, args) {
+                   sessions = @store.list_sessions
+                   sessions.map { |s| @store.serialize_session(s) }
+                 }
                when "rails_markup_get_session"
-                 session = @store.get_session(args["sessionId"])
-                 session ? @store.serialize_session(session) : { error: "Session not found" }
+                 handle_local_or_proxy(:get_session, args) {
+                   session = @store.get_session(args["sessionId"])
+                   session ? @store.serialize_session(session) : { error: "Session not found" }
+                 }
                when "rails_markup_get_pending"
-                 pending = @store.pending_for_session(args["sessionId"])
-                 pending.map { |a| @store.serialize_annotation(a) }
+                 handle_local_or_proxy(:get_pending, args) {
+                   pending = @store.pending_for_session(args["sessionId"])
+                   pending.map { |a| @store.serialize_annotation(a) }
+                 }
                when "rails_markup_get_all_pending"
-                 pending = @store.all_pending
-                 pending.map { |a| @store.serialize_annotation(a) }
+                 handle_local_or_proxy(:get_all_pending, args) {
+                   pending = @store.all_pending
+                   pending.map { |a| @store.serialize_annotation(a) }
+                 }
                when "rails_markup_watch_annotations"
                  handle_watch(args)
                when "rails_markup_acknowledge"
-                 ann = @store.acknowledge(args["annotationId"])
-                 ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
+                 handle_local_or_proxy(:acknowledge, args) {
+                   ann = @store.acknowledge(args["annotationId"])
+                   ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
+                 }
                when "rails_markup_resolve"
-                 ann = @store.resolve(args["annotationId"], summary: args["summary"])
-                 ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
+                 handle_local_or_proxy(:resolve, args) {
+                   ann = @store.resolve(args["annotationId"], summary: args["summary"])
+                   ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
+                 }
                when "rails_markup_dismiss"
-                 ann = @store.dismiss(args["annotationId"], reason: args["reason"])
-                 ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
+                 handle_local_or_proxy(:dismiss, args) {
+                   ann = @store.dismiss(args["annotationId"], reason: args["reason"])
+                   ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
+                 }
                when "rails_markup_reply"
-                 ann = @store.reply(args["annotationId"], message: args["message"])
-                 ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
+                 handle_local_or_proxy(:reply, args) {
+                   ann = @store.reply(args["annotationId"], message: args["message"])
+                   ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
+                 }
                when "rails_markup_fetch_production"
                  handle_fetch_production(args)
                when "rails_markup_resolve_production"
@@ -242,6 +258,63 @@ module RailsMarkup
 
       content = [{ type: "text", text: result.to_json }]
       result_response(id, { content: content })
+    end
+
+    # -- Dev API proxy --
+    # When RAILS_MARKUP_DEV_URL is set, local tools proxy to the dev server's
+    # internal API instead of the in-memory store. This lets MCP tools query
+    # the Rails database directly.
+
+    def dev_url
+      ENV["RAILS_MARKUP_DEV_URL"]
+    end
+
+    def dev_token
+      ENV["RAILS_MARKUP_DEV_TOKEN"] || ENV["RAILS_MARKUP_PROD_TOKEN"]
+    end
+
+    def handle_local_or_proxy(action, args, &fallback)
+      return fallback.call unless dev_url && dev_token
+
+      case action
+      when :list_sessions
+        # No session concept in DB — return empty (annotations are sessionless)
+        []
+      when :get_session
+        { error: "Sessions not available when using dev API proxy" }
+      when :get_pending
+        # No session concept — return all pending
+        dev_fetch_pending
+      when :get_all_pending
+        dev_fetch_pending
+      when :acknowledge
+        dev_action(args["annotationId"], "acknowledge")
+      when :resolve
+        dev_action(args["annotationId"], "resolve", summary: args["summary"])
+      when :dismiss
+        dev_action(args["annotationId"], "dismiss", reason: args["reason"])
+      when :reply
+        dev_action(args["annotationId"], "reply", message: args["message"])
+      else
+        fallback.call
+      end
+    end
+
+    def dev_fetch_pending
+      resp = prod_get("#{dev_url}/internal/annotations/pending", dev_token)
+      return { error: "Dev API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
+
+      data = JSON.parse(resp.body)
+      { count: (data["annotations"] || []).size, annotations: data["annotations"] || [] }
+    end
+
+    def dev_action(annotation_id, action, **params)
+      return { error: "No annotationId provided." } unless annotation_id
+
+      resp = prod_patch("#{dev_url}/internal/annotations/#{annotation_id}/#{action}", dev_token, params)
+      return { error: "Dev API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
+
+      JSON.parse(resp.body)
     end
 
     # -- Production API helpers --

@@ -1,0 +1,7 @@
+# frozen_string_literal: true
+
+# Base controller for Rails Markup engine.
+# Inherits authentication from <%= options[:base_controller] %>.
+# Customize this to add authorization logic.
+class RailsMarkupAuthController < <%= options[:base_controller] %>
+end

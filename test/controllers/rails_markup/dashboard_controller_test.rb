@@ -26,6 +26,17 @@ module RailsMarkup
       assert_response :success
     end
 
+    test "index defaults to pending status" do
+      get rails_markup.root_path
+      assert_select ".rm-pill-active", text: "Pending"
+    end
+
+    test "index renders turbo frames" do
+      get rails_markup.root_path
+      assert_select "turbo-frame#annotations-content"
+      assert_select "turbo-frame#detail-panel"
+    end
+
     # --- Show ---
 
     test "show displays annotation" do
@@ -36,6 +47,11 @@ module RailsMarkup
     test "show displays resolved annotation with thread" do
       get rails_markup.annotation_path(annotations(:resolved_fix))
       assert_response :success
+    end
+
+    test "show renders within detail-panel turbo frame" do
+      get rails_markup.annotation_path(annotations(:pending_fix))
+      assert_select "turbo-frame#detail-panel"
     end
 
     # --- Update actions ---
@@ -91,6 +107,17 @@ module RailsMarkup
         params: { action_type: "reply", message: "Noted" }
 
       assert_equal "agent", annotation.reload.thread.last["role"]
+    end
+
+    # --- Dismiss all ---
+
+    test "dismiss_all dismisses pending annotations" do
+      assert annotations(:pending_fix).status == "pending"
+
+      post rails_markup.dismiss_all_path(status: "pending")
+
+      assert_redirected_to rails_markup.root_path(status: "dismissed")
+      assert_equal "dismissed", annotations(:pending_fix).reload.status
     end
   end
 end

@@ -219,6 +219,7 @@
       this._boundMouseMove = (e) => self._handleMouseMove(e);
       this._boundMouseDown = (e) => self._handleMouseDown(e);
       this._boundMouseUp = (e) => self._handleMouseUp(e);
+      this._boundClick = (e) => self._handleClick(e);
       this._boundKeyDown = (e) => self._handleKeyDown(e);
 
       // Turbo Drive — full page navigation, reload annotations for new URL
@@ -276,7 +277,8 @@
       this.active = !this.active;
       if (this.active) {
         this._activateMode();
-        if (this.annotations.length > 0 && document.getElementById("rm-panel").style.display !== "flex") {
+        // Always open panel when activating annotation mode
+        if (document.getElementById("rm-panel").style.display !== "flex") {
           this.togglePanel();
         }
       } else {
@@ -293,6 +295,7 @@
       document.addEventListener("mousemove", this._boundMouseMove, true);
       document.addEventListener("mousedown", this._boundMouseDown, true);
       document.addEventListener("mouseup", this._boundMouseUp, true);
+      document.addEventListener("click", this._boundClick, true);
       document.addEventListener("keydown", this._boundKeyDown, true);
     },
 
@@ -309,6 +312,7 @@
       document.removeEventListener("mousemove", this._boundMouseMove, true);
       document.removeEventListener("mousedown", this._boundMouseDown, true);
       document.removeEventListener("mouseup", this._boundMouseUp, true);
+      document.removeEventListener("click", this._boundClick, true);
       document.removeEventListener("keydown", this._boundKeyDown, true);
       this._removeHighlight();
     },
@@ -354,6 +358,15 @@
       this._currentElement = this._identify(el);
       this._showPopup(event.clientX, event.clientY);
       this.clickedElement = null;
+    },
+
+    _handleClick(event) {
+      if (!this.active) return;
+      const el = event.target;
+      if (this._isToolbar(el)) return;
+      // Block link navigation and Turbo visits while annotating
+      event.preventDefault();
+      event.stopPropagation();
     },
 
     _handleKeyDown(event) {
@@ -582,7 +595,7 @@
         else { badge.style.display = "none"; }
       }
       const toggle = document.getElementById("rm-panel-toggle");
-      if (toggle) toggle.style.display = count > 0 ? "flex" : "none";
+      if (toggle) toggle.style.display = "flex";
     },
 
     // ---- Pins ----

@@ -4,6 +4,7 @@ RailsMarkup::Engine.routes.draw do
   # Dashboard
   root to: "dashboard#index"
   resources :annotations, only: [:show, :update], controller: "dashboard"
+  post "dismiss_all", to: "dashboard#dismiss_all"
 
   # Toolbar API (same-origin, used by browser toolbar)
   scope :api, defaults: { format: :json } do

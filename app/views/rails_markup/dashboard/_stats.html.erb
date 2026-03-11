@@ -1,0 +1,22 @@
+<div class="rm-stats">
+  <div class="rm-stat">
+    <div class="rm-stat-value"><%= @total_count %></div>
+    <div class="rm-stat-label">Total</div>
+  </div>
+  <div class="rm-stat">
+    <div class="rm-stat-value" style="color: #f59e0b;"><%= @pending_count %></div>
+    <div class="rm-stat-label">Pending</div>
+  </div>
+  <div class="rm-stat">
+    <div class="rm-stat-value" style="color: #3b82f6;"><%= @acknowledged_count %></div>
+    <div class="rm-stat-label">Acknowledged</div>
+  </div>
+  <div class="rm-stat">
+    <div class="rm-stat-value" style="color: #10b981;"><%= @resolved_count %></div>
+    <div class="rm-stat-label">Resolved</div>
+  </div>
+  <div class="rm-stat">
+    <div class="rm-stat-value" style="color: #9ca3af;"><%= @dismissed_count %></div>
+    <div class="rm-stat-label">Dismissed</div>
+  </div>
+</div>

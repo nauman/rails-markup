@@ -1,100 +1,38 @@
 <% content_for(:title) { "Dashboard" } %>
+<% content_for(:page_title) { "Annotations" } %>
 
-<%# Stats bar %>
-<div class="rm-stats">
-  <div class="rm-stat">
-    <div class="rm-stat-value"><%= @total_count %></div>
-    <div class="rm-stat-label">Total</div>
+<%= render "styles" %>
+
+
+<div class="rm-layout">
+  <div class="rm-main">
+    <turbo-frame id="annotations-content">
+      <%= render "stats" %>
+      <%= render "filters" %>
+      <%= render "annotation_list" %>
+    </turbo-frame>
   </div>
-  <div class="rm-stat">
-    <div class="rm-stat-value" style="color: #f59e0b;"><%= @pending_count %></div>
-    <div class="rm-stat-label">Pending</div>
-  </div>
-  <div class="rm-stat">
-    <div class="rm-stat-value" style="color: #3b82f6;"><%= @acknowledged_count %></div>
-    <div class="rm-stat-label">Acknowledged</div>
-  </div>
-  <div class="rm-stat">
-    <div class="rm-stat-value" style="color: #10b981;"><%= @resolved_count %></div>
-    <div class="rm-stat-label">Resolved</div>
-  </div>
-  <div class="rm-stat">
-    <div class="rm-stat-value" style="color: #9ca3af;"><%= @dismissed_count %></div>
-    <div class="rm-stat-label">Dismissed</div>
-  </div>
+
+  <turbo-frame id="detail-panel" class="rm-panel rm-panel-empty">
+  </turbo-frame>
 </div>
 
-<%# Filters %>
-<div class="rm-filters">
-  <%
-    statuses = [
-      ["all", "All"],
-      ["pending", "Pending"],
-      ["acknowledged", "Acknowledged"],
-      ["resolved", "Resolved"],
-      ["dismissed", "Dismissed"]
-    ]
-  %>
-  <% statuses.each do |value, label| %>
-    <a href="<%= rails_markup.root_path(status: value == "all" ? nil : value, page_url: @current_page_url) %>"
-       class="rm-pill <%= 'rm-pill-active' if @current_status == value %>">
-      <%= label %>
-    </a>
-  <% end %>
-
-  <% if @page_urls.any? %>
-    <select class="rm-select" onchange="window.location.href=this.value">
-      <option value="<%= rails_markup.root_path(status: @current_status == 'all' ? nil : @current_status) %>">All pages</option>
-      <% @page_urls.each do |url| %>
-        <option value="<%= rails_markup.root_path(status: @current_status == 'all' ? nil : @current_status, page_url: url) %>"
-                <%= 'selected' if @current_page_url == url %>>
-          <%= truncate(url, length: 60) %>
-        </option>
-      <% end %>
-    </select>
-  <% end %>
-</div>
-
-<%# Annotation list %>
-<% if @annotations.any? %>
-  <% @annotations.each do |annotation| %>
-    <div class="rm-card">
-      <a href="<%= rails_markup.annotation_path(annotation) %>" class="rm-card-link">
-        <div class="rm-card-header">
-          <span class="rm-dot rm-dot-<%= annotation.status %>"></span>
-          <span class="rm-badge rm-status-<%= annotation.status %>"><%= annotation.status %></span>
-          <span class="rm-badge rm-intent-<%= annotation.intent %>"><%= annotation.intent %></span>
-          <% if annotation.severity != "suggestion" %>
-            <span class="rm-badge rm-severity-<%= annotation.severity %>"><%= annotation.severity %></span>
-          <% end %>
-        </div>
-        <div class="rm-card-content"><%= truncate(annotation.content, length: 200) %></div>
-        <div class="rm-card-meta">
-          <code><%= truncate(annotation.page_url, length: 50) %></code>
-          <span><%= annotation.created_at.strftime("%b %d, %Y %H:%M") %></span>
-          <% if annotation.thread.any? %>
-            <span><%= annotation.thread.size %> replies</span>
-          <% end %>
-        </div>
-      </a>
-    </div>
-  <% end %>
-
-  <%# Pagination %>
-  <% total_pages = (@total_count.to_f / RailsMarkup.config.per_page).ceil %>
-  <% if total_pages > 1 %>
-    <div class="rm-filters" style="margin-top: 16px; justify-content: center;">
-      <% (1..total_pages).each do |page| %>
-        <a href="<%= rails_markup.root_path(status: @current_status == 'all' ? nil : @current_status, page_url: @current_page_url, page: page) %>"
-           class="rm-pill <%= 'rm-pill-active' if @current_page == page %>">
-          <%= page %>
-        </a>
-      <% end %>
-    </div>
-  <% end %>
-<% else %>
-  <div class="rm-empty">
-    <div class="rm-empty-icon">&#9670;</div>
-    <div class="rm-empty-text">No annotations yet.<br>Use the toolbar to start annotating.</div>
-  </div>
-<% end %>
+<script>
+  document.addEventListener("turbo:frame-load", (e) => {
+    if (e.target.id !== "detail-panel") return;
+    // Show panel (hidden when empty)
+    e.target.classList.remove("rm-panel-empty");
+    // Highlight active card
+    document.querySelectorAll(".rm-card-active").forEach(c => c.classList.remove("rm-card-active"));
+    const src = e.target.getAttribute("src") || "";
+    const match = src.match(/annotations\/(\d+)/);
+    if (match) {
+      const card = document.querySelector(`[data-annotation-id="${match[1]}"]`);
+      if (card) card.classList.add("rm-card-active");
+    }
+    // Scroll to panel on mobile
+    if (window.innerWidth <= 900) {
+      e.target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
+</script>

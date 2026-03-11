@@ -1,0 +1,23 @@
+<% if @annotations.any? %>
+  <% @annotations.each do |annotation| %>
+    <%= render "annotation_card", annotation: annotation %>
+  <% end %>
+
+  <%# Pagination %>
+  <% total_pages = (@total_count.to_f / RailsMarkup.config.per_page).ceil %>
+  <% if total_pages > 1 %>
+    <div class="rm-filters" style="margin-top: 16px; justify-content: center;">
+      <% (1..total_pages).each do |page| %>
+        <a href="<%= rails_markup.root_path(status: @current_status, page_url: @current_page_url, page: page) %>"
+           class="rm-pill <%= 'rm-pill-active' if @current_page == page %>">
+          <%= page %>
+        </a>
+      <% end %>
+    </div>
+  <% end %>
+<% else %>
+  <div class="rm-empty">
+    <div class="rm-empty-icon">&#9670;</div>
+    <div class="rm-empty-text">No annotations yet.<br>Use the toolbar to start annotating.</div>
+  </div>
+<% end %>

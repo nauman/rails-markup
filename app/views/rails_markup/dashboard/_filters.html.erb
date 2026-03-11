@@ -1,0 +1,35 @@
+<div class="rm-filters">
+  <%
+    statuses = [
+      ["all", "All"],
+      ["pending", "Pending"],
+      ["acknowledged", "Acknowledged"],
+      ["resolved", "Resolved"],
+      ["dismissed", "Dismissed"]
+    ]
+  %>
+  <% statuses.each do |value, label| %>
+    <a href="<%= rails_markup.root_path(status: value, page_url: @current_page_url) %>"
+       class="rm-pill <%= 'rm-pill-active' if @current_status == value %>">
+      <%= label %>
+    </a>
+  <% end %>
+
+  <% if @current_status.in?(%w[pending acknowledged]) && @annotations.any? %>
+    <%= form_tag(rails_markup.dismiss_all_path(status: @current_status), method: :post, style: "display:inline", data: { turbo_confirm: "Dismiss all #{@current_status} annotations?" }) do %>
+      <button type="submit" class="rm-pill" style="color: #ef4444; border-color: #fecaca;">Dismiss all <%= @current_status %></button>
+    <% end %>
+  <% end %>
+
+  <% if @page_urls.any? %>
+    <select class="rm-select" onchange="document.getElementById('annotations-content').src=this.value">
+      <option value="<%= rails_markup.root_path(status: @current_status == 'all' ? nil : @current_status) %>">All pages</option>
+      <% @page_urls.each do |url| %>
+        <option value="<%= rails_markup.root_path(status: @current_status == 'all' ? nil : @current_status, page_url: url) %>"
+                <%= 'selected' if @current_page_url == url %>>
+          <%= truncate(url, length: 60) %>
+        </option>
+      <% end %>
+    </select>
+  <% end %>
+</div>

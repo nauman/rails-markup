@@ -49,4 +49,15 @@ class ConfigurationTest < ActiveSupport::TestCase
     config.base_controller_class = "ActionController::Base"
     assert_equal "ActionController::Base", config.base_controller_class
   end
+
+  test "defaults return_url to nil" do
+    config = RailsMarkup::Configuration.new
+    assert_nil config.return_url
+  end
+
+  test "return_url accepts path string" do
+    config = RailsMarkup::Configuration.new
+    config.return_url = "/admin"
+    assert_equal "/admin", config.return_url
+  end
 end

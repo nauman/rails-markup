@@ -3,7 +3,7 @@
 RailsMarkup.configure do |config|
   # Base controller class for dashboard authentication.
   # Set to a controller that provides admin auth (like Mission Control does).
-  # config.base_controller_class = "AdminAuthController"
+  config.base_controller_class = "RailsMarkupAuthController"
 
   # Bearer token for the external API (used by MCP production tools).
   # Set to enable the /external/* endpoints.
@@ -17,4 +17,7 @@ RailsMarkup.configure do |config|
 
   # Toolbar accent color: "indigo", "amber", "blue", "emerald", "rose"
   # config.toolbar_accent = "indigo"
+
+  # "Back to app" link in the dashboard header.
+  # config.return_url = "/admin"
 end

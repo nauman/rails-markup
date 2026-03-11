@@ -112,7 +112,19 @@
     .rm-empty-icon { font-size: 36px; margin-bottom: 12px; }
     .rm-empty-text { font-size: 14px; }
 
+    /* Two-column layout */
+    .rm-layout { display: flex; gap: 24px; }
+    .rm-main { flex: 1; min-width: 0; }
+    .rm-panel { width: 420px; flex-shrink: 0; position: sticky; top: 80px; max-height: calc(100vh - 100px); overflow-y: auto; background: #f8f9fa; }
+    .rm-panel .rm-detail { border-left: 3px solid #818cf8; }
+    .rm-card-active { border-color: #818cf8 !important; background: #f5f3ff; }
+    .rm-panel-empty { display: none; }
+
     /* Responsive */
+    @media (max-width: 900px) {
+      .rm-layout { flex-direction: column; }
+      .rm-panel { width: 100%; position: static; max-height: none; background: #f8f9fa; }
+    }
     @media (max-width: 640px) {
       .rm-stats { flex-direction: column; }
       .rm-stat { min-width: unset; }
@@ -126,6 +138,9 @@
     <h1><span>&#9670;</span> Rails Markup</h1>
     <nav>
       <a href="<%= rails_markup.root_path %>">Dashboard</a>
+      <% if RailsMarkup.config.return_url.present? %>
+        <a href="<%= RailsMarkup.config.return_url %>">&#8592; Back to app</a>
+      <% end %>
     </nav>
   </header>
 

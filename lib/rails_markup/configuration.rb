@@ -21,12 +21,25 @@ module RailsMarkup
     # Accepts: "indigo", "amber", "blue", "emerald", "rose"
     attr_accessor :toolbar_accent
 
+    # URL path for "Back to app" link in the dashboard header.
+    # Set to nil to hide the link.
+    # Example: "/admin"
+    attr_accessor :return_url
+
+    # Layout for the dashboard views.
+    # Set to a host app layout name to embed within that layout.
+    # Default: "rails_markup/application" (engine's own layout)
+    # Example: "admin"
+    attr_accessor :dashboard_layout
+
     def initialize
       @base_controller_class = "RailsMarkup::ApplicationController"
       @api_token = nil
       @table_name = "rails_markup_annotations"
       @per_page = 25
       @toolbar_accent = "indigo"
+      @return_url = nil
+      @dashboard_layout = "rails_markup/application"
     end
   end
 
