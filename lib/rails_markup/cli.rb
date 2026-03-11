@@ -16,6 +16,8 @@ module RailsMarkup
     MASKED_STYLE = Lipgloss::Style.new.foreground("#6B7280").padding(0, 1)
     LABEL_STYLE  = Lipgloss::Style.new.bold(true).foreground("#FFFFFF")
     HINT_STYLE   = Lipgloss::Style.new.foreground("#6B7280")
+    SUCCESS_STYLE = Lipgloss::Style.new.bold(true).foreground("#22C55E")
+    ERROR_STYLE   = Lipgloss::Style.new.bold(true).foreground("#EF4444")
 
     desc "server", "Start HTTP + MCP server"
     method_option :port, type: :numeric, default: 4747, desc: "HTTP server port"
@@ -92,48 +94,23 @@ module RailsMarkup
       say ""
     end
 
-    desc "fetch", "Fetch pending annotations from dev or production"
-    method_option :env, type: :string, default: "dev", enum: %w[dev production],
-      desc: "Which environment to fetch from"
+    # ── Unified commands (match MCP tool verbs) ──────────────
+
+    desc "pending", "Fetch pending annotations"
+    method_option :production, type: :boolean, default: false, desc: "Fetch from production"
     method_option :url, type: :string, desc: "Override base URL"
     method_option :token, type: :string, desc: "Override API token"
-    method_option :mount_path, type: :string, desc: "Engine mount path (default: /admin/annotations)"
-    def fetch
-      config = McpConfig.new
-      mcp_env = config.exist? ? config.raw_env : {}
+    method_option :mount_path, type: :string, desc: "Engine mount path"
+    def pending
+      env = resolve_env(options[:production])
+      return unless env
 
-      target = options[:env]
+      annotations = fetch_pending_from(env)
+      return unless annotations
 
-      if target == "dev"
-        base_url = options[:url] || mcp_env["RAILS_MARKUP_DEV_URL"]
-        token = options[:token] || mcp_env["RAILS_MARKUP_DEV_TOKEN"] # optional for dev
-        mount_path = options[:mount_path] || mcp_env["RAILS_MARKUP_MOUNT_PATH"] || "/admin/annotations"
-        api_url = "#{base_url}#{mount_path}/external/pending"
-      else
-        base_url = options[:url] || mcp_env["RAILS_MARKUP_PROD_URL"]
-        token = options[:token] || mcp_env["RAILS_MARKUP_PROD_TOKEN"]
-        mount_path = options[:mount_path] || mcp_env["RAILS_MARKUP_MOUNT_PATH"] || "/admin/annotations"
-        api_url = "#{base_url}#{mount_path}/external/pending"
-      end
-
-      unless base_url
-        flag = target == "dev" ? "dev" : "prod"
-        say "No #{target} URL. Set it via:", :red
-        say "  bin/markup configure --#{flag}-url URL"
-        return
-      end
-
-      if target == "production" && !token
-        say "No production token configured.", :red
-        say "  bin/markup configure --prod-token TOKEN"
-        return
-      end
-
-      annotations = fetch_pending(api_url, token)
-
-      env_label = target == "dev" ? "Development" : "Production"
+      env_label = options[:production] ? "Production" : "Development"
       $stdout.puts ""
-      $stdout.puts "#{LABEL_STYLE.render(" #{env_label} ")} #{HINT_STYLE.render(base_url)}"
+      $stdout.puts "#{LABEL_STYLE.render(" #{env_label} ")} #{HINT_STYLE.render(env[:base_url])}"
       $stdout.puts ""
 
       if annotations.empty?
@@ -144,15 +121,84 @@ module RailsMarkup
 
       $stdout.puts annotation_table(annotations)
       say ""
-
-      annotations.each do |ann|
-        render_annotation(ann)
-      end
+      annotations.each { |ann| render_annotation(ann) }
     end
 
-    desc "production", "Fetch pending annotations from production"
+    desc "resolve ID", "Resolve an annotation with a summary"
+    method_option :summary, type: :string, desc: "Summary of how it was resolved"
+    method_option :production, type: :boolean, default: false, desc: "Target production"
+    def resolve(id = nil)
+      return say("#{ERROR_STYLE.render("Error:")} annotation ID is required") unless id
+
+      env = resolve_env(options[:production])
+      return unless env
+
+      result = patch_annotation(env, id, "resolve", summary: options[:summary])
+      return unless result
+
+      $stdout.puts "#{SUCCESS_STYLE.render("Resolved")} ##{id}"
+    end
+
+    desc "dismiss ID", "Dismiss an annotation with a reason"
+    method_option :reason, type: :string, desc: "Reason for dismissing"
+    method_option :production, type: :boolean, default: false, desc: "Target production"
+    def dismiss(id = nil)
+      return say("#{ERROR_STYLE.render("Error:")} annotation ID is required") unless id
+
+      env = resolve_env(options[:production])
+      return unless env
+
+      result = patch_annotation(env, id, "dismiss", reason: options[:reason])
+      return unless result
+
+      $stdout.puts "#{SUCCESS_STYLE.render("Dismissed")} ##{id}"
+    end
+
+    desc "reply ID MESSAGE", "Reply to an annotation thread"
+    method_option :production, type: :boolean, default: false, desc: "Target production"
+    def reply(id = nil, message = nil)
+      return say("#{ERROR_STYLE.render("Error:")} annotation ID is required") unless id
+      return say("#{ERROR_STYLE.render("Error:")} message is required") unless message
+
+      env = resolve_env(options[:production])
+      return unless env
+
+      result = patch_annotation(env, id, "reply", message: message)
+      return unless result
+
+      $stdout.puts "#{SUCCESS_STYLE.render("Reply sent")} to ##{id}"
+    end
+
+    desc "acknowledge ID", "Mark an annotation as acknowledged"
+    method_option :production, type: :boolean, default: false, desc: "Target production"
+    def acknowledge(id = nil)
+      return say("#{ERROR_STYLE.render("Error:")} annotation ID is required") unless id
+
+      env = resolve_env(options[:production])
+      return unless env
+
+      result = patch_annotation(env, id, "acknowledge")
+      return unless result
+
+      $stdout.puts "#{SUCCESS_STYLE.render("Acknowledged")} ##{id}"
+    end
+
+    # ── Legacy aliases ───────────────────────────────────────
+
+    desc "fetch", "Fetch pending annotations (use 'pending' instead)"
+    method_option :env, type: :string, default: "dev", enum: %w[dev production],
+      desc: "Which environment to fetch from"
+    method_option :url, type: :string, desc: "Override base URL"
+    method_option :token, type: :string, desc: "Override API token"
+    method_option :mount_path, type: :string, desc: "Engine mount path (default: /admin/annotations)"
+    def fetch
+      production = options[:env] == "production"
+      invoke :pending, [], production: production, url: options[:url], token: options[:token], mount_path: options[:mount_path]
+    end
+
+    desc "production", "Fetch pending annotations from production (use 'pending --production' instead)"
     def production
-      invoke :fetch, [], env: "production"
+      invoke :pending, [], production: true
     end
 
     desc "setup-production", "Generate a token and configure production access"
@@ -199,7 +245,7 @@ module RailsMarkup
       say '  config.api_token = ENV["RAILS_MARKUP_API_TOKEN"]'
       say ""
       say "Deploy, then verify:"
-      say "  bin/markup fetch --env=production"
+      say "  bin/markup pending --production"
       say ""
     end
 
@@ -209,11 +255,91 @@ module RailsMarkup
 
     private
 
-    def fetch_pending(url, token = nil)
+    # ── Environment resolution ────────────────────────────────
+
+    def resolve_env(production)
+      config = McpConfig.new
+      mcp_env = config.exist? ? config.raw_env : {}
+
+      if production
+        base_url = options[:url] || mcp_env["RAILS_MARKUP_PROD_URL"]
+        token = options[:token] || mcp_env["RAILS_MARKUP_PROD_TOKEN"]
+        mount = options[:mount_path] || mcp_env["RAILS_MARKUP_MOUNT_PATH"] || "/admin/annotations"
+
+        unless base_url
+          say "No production URL. Set it via:", :red
+          say "  bin/markup configure --prod-url URL"
+          return nil
+        end
+
+        unless token
+          say "No production token configured.", :red
+          say "  bin/markup configure --prod-token TOKEN"
+          return nil
+        end
+
+        { base_url: base_url, token: token, mount_path: mount }
+      else
+        base_url = options[:url] || mcp_env["RAILS_MARKUP_DEV_URL"]
+        token = options[:token] || mcp_env["RAILS_MARKUP_DEV_TOKEN"]
+        mount = options[:mount_path] || mcp_env["RAILS_MARKUP_MOUNT_PATH"] || "/admin/annotations"
+
+        unless base_url
+          say "No dev URL. Set it via:", :red
+          say "  bin/markup configure --dev-url URL"
+          return nil
+        end
+
+        { base_url: base_url, token: token, mount_path: mount }
+      end
+    end
+
+    def api_base(env)
+      "#{env[:base_url]}#{env[:mount_path]}/external"
+    end
+
+    # ── HTTP helpers ──────────────────────────────────────────
+
+    def fetch_pending_from(env)
       require "net/http"
       require "uri"
       require "json"
 
+      url = "#{api_base(env)}/pending"
+      resp = http_get(url, token: env[:token])
+
+      unless resp.is_a?(Net::HTTPSuccess)
+        say "API error: #{resp.code} #{resp.body}", :red
+        return nil
+      end
+
+      data = JSON.parse(resp.body)
+      data["annotations"] || []
+    rescue => e
+      say "Connection error: #{e.message}", :red
+      nil
+    end
+
+    def patch_annotation(env, id, action, **params)
+      require "net/http"
+      require "uri"
+      require "json"
+
+      url = "#{api_base(env)}/#{id}/#{action}"
+      resp = http_patch(url, token: env[:token], params: params.compact)
+
+      unless resp.is_a?(Net::HTTPSuccess)
+        say "API error: #{resp.code} #{resp.body}", :red
+        return nil
+      end
+
+      JSON.parse(resp.body)
+    rescue => e
+      say "Connection error: #{e.message}", :red
+      nil
+    end
+
+    def http_get(url, token: nil)
       uri = URI.parse(url)
       req = Net::HTTP::Get.new(uri)
       req["Authorization"] = "Bearer #{token}" if token
@@ -222,19 +348,24 @@ module RailsMarkup
       http.use_ssl = uri.scheme == "https"
       http.open_timeout = 10
       http.read_timeout = 15
-      resp = http.request(req)
-
-      unless resp.is_a?(Net::HTTPSuccess)
-        say "API error: #{resp.code} #{resp.body}", :red
-        return []
-      end
-
-      data = JSON.parse(resp.body)
-      data["annotations"] || []
-    rescue => e
-      say "Connection error: #{e.message}", :red
-      []
+      http.request(req)
     end
+
+    def http_patch(url, token: nil, params: {})
+      uri = URI.parse(url)
+      req = Net::HTTP::Patch.new(uri)
+      req["Authorization"] = "Bearer #{token}" if token
+      req["Content-Type"] = "application/json"
+      req["Accept"] = "application/json"
+      req.body = params.to_json unless params.empty?
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = uri.scheme == "https"
+      http.open_timeout = 10
+      http.read_timeout = 15
+      http.request(req)
+    end
+
+    # ── Rendering ─────────────────────────────────────────────
 
     def annotation_table(annotations)
       rows = annotations.map do |ann|

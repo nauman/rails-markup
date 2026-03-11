@@ -96,7 +96,7 @@ class CliTest < Minitest::Test
     assert_match(/Token:/, output)
     assert_match(/rails credentials:edit/, output)
     assert_match(/config\.api_token/, output)
-    assert_match(/bin\/markup fetch --env=production/, output)
+    assert_match(/bin\/markup pending --production/, output)
   end
 
   def test_setup_production_without_url_shows_error
@@ -151,6 +151,73 @@ class CliTest < Minitest::Test
     assert_equal ["exec", "rails-markup", "mcp"], server["args"]
   end
 
+  # -- pending --
+
+  def test_pending_without_url_shows_error
+    output = capture_output { run_cli("pending") }
+    assert_match(/No dev URL/, output)
+    assert_match(/bin\/markup configure/, output)
+  end
+
+  def test_pending_production_without_url_shows_error
+    output = capture_output { run_cli("pending", "--production") }
+    assert_match(/No production URL/, output)
+  end
+
+  def test_pending_production_without_token_shows_error
+    run_cli("configure", "--prod-url", "https://example.com")
+    output = capture_output { run_cli("pending", "--production") }
+    assert_match(/No production token/, output)
+  end
+
+  # -- resolve --
+
+  def test_resolve_without_id_shows_error
+    output = capture_output { run_cli("resolve") }
+    assert_match(/annotation ID/i, output)
+  end
+
+  # -- dismiss --
+
+  def test_dismiss_without_id_shows_error
+    output = capture_output { run_cli("dismiss") }
+    assert_match(/annotation ID/i, output)
+  end
+
+  # -- reply --
+
+  def test_reply_without_id_shows_error
+    output = capture_output { run_cli("reply") }
+    assert_match(/annotation ID/i, output)
+  end
+
+  def test_reply_without_message_shows_error
+    run_cli("configure", "--dev-url", "http://localhost:3000")
+    output = capture_output { run_cli("reply", "42") }
+    assert_match(/message/i, output)
+  end
+
+  # -- acknowledge --
+
+  def test_acknowledge_without_id_shows_error
+    output = capture_output { run_cli("acknowledge") }
+    assert_match(/annotation ID/i, output)
+  end
+
+  # -- fetch (legacy, still works) --
+
+  def test_fetch_without_url_shows_error
+    output = capture_output { run_cli("fetch") }
+    assert_match(/No dev URL/, output)
+    assert_match(/bin\/markup configure/, output)
+  end
+
+  def test_fetch_production_without_token_shows_error
+    run_cli("configure", "--prod-url", "https://example.com")
+    output = capture_output { run_cli("fetch", "--env=production") }
+    assert_match(/No production token/, output)
+  end
+
   # -- help --
 
   def test_bare_command_shows_help
@@ -158,7 +225,11 @@ class CliTest < Minitest::Test
     assert_match(/server/, output)
     assert_match(/configure/, output)
     assert_match(/status/, output)
-    assert_match(/fetch/, output)
+    assert_match(/pending/, output)
+    assert_match(/resolve/, output)
+    assert_match(/dismiss/, output)
+    assert_match(/reply/, output)
+    assert_match(/acknowledge/, output)
     assert_match(/setup-production/, output)
   end
 
