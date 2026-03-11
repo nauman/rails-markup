@@ -123,12 +123,23 @@ module RailsMarkup
 
       say "#{annotations.size} pending annotation(s):\n"
       annotations.each_with_index do |ann, i|
+        target = ann["target"] || {}
         page = URI.parse(ann["pageUrl"]).path rescue ann["pageUrl"]
-        say "#{i + 1}. [##{ann["id"]}] #{ann["intent"]} | #{ann["severity"]} | #{page}"
-        say "   #{ann["content"]}"
-        say "   Element: #{ann.dig("target", "selector")}" if ann.dig("target", "selector")
+        nearby = target["nearbyText"]&.strip&.gsub(/\s+/, " ")&.slice(0, 80)
+
+        say "─" * 60
+        say "##{ann["id"]}  #{ann["intent"]} | #{ann["severity"]}  #{page}"
+        say ""
+        say "  #{ann["content"]}"
+        say ""
+        say "  CSS path:  #{target["cssPath"]}" if target["cssPath"]
+        say "  Selector:  #{target["selector"]}" if target["selector"]
+        say "  Text near: \"#{nearby}\"" if nearby
+        say "  Selected:  \"#{ann["selectedText"]}\"" if ann["selectedText"]
+        say "  Created:   #{ann["createdAt"]}"
         say ""
       end
+      say "─" * 60
     end
 
     def self.exit_on_failure?
