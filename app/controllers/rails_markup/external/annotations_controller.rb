@@ -10,36 +10,36 @@ module RailsMarkup
         render json: { error: "not found" }, status: :not_found
       end
 
-      # GET /feedback/external/annotations/pending
+      # GET /external/pending
       def pending
         annotations = Annotation.pending.recent.limit(50)
         render json: { annotations: annotations.map(&:as_api_json) }
       end
 
-      # GET /feedback/external/annotations/:id
+      # GET /external/:id
       def show
         render json: @annotation.as_api_json
       end
 
-      # PATCH /feedback/external/annotations/:id/acknowledge
+      # PATCH /external/:id/acknowledge
       def acknowledge
         @annotation.acknowledge!
         render json: @annotation.as_api_json
       end
 
-      # PATCH /feedback/external/annotations/:id/resolve
+      # PATCH /external/:id/resolve
       def resolve
         @annotation.resolve!(summary: params[:summary])
         render json: @annotation.as_api_json
       end
 
-      # PATCH /feedback/external/annotations/:id/dismiss
+      # PATCH /external/:id/dismiss
       def dismiss
         @annotation.dismiss!(reason: params[:reason])
         render json: @annotation.as_api_json
       end
 
-      # PATCH /feedback/external/annotations/:id/reply
+      # PATCH /external/:id/reply
       def reply
         return render json: { error: "message is required" }, status: :unprocessable_entity if params[:message].blank?
 
@@ -54,8 +54,8 @@ module RailsMarkup
       end
 
       def authenticate_token!
-        # Development — allow local requests without token
-        return if Rails.env.development? && request.local?
+        # Development — allow all requests without token (dev server may bind to LAN IP)
+        return if Rails.env.development?
 
         token = RailsMarkup.config.api_token
         return head(:not_found) if token.nil?

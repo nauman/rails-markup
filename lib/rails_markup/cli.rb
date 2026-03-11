@@ -108,12 +108,12 @@ module RailsMarkup
         base_url = options[:url] || mcp_env["RAILS_MARKUP_DEV_URL"]
         token = options[:token] || mcp_env["RAILS_MARKUP_DEV_TOKEN"] # optional for dev
         mount_path = options[:mount_path] || mcp_env["RAILS_MARKUP_MOUNT_PATH"] || "/admin/annotations"
-        api_url = "#{base_url}#{mount_path}/external/annotations/pending"
+        api_url = "#{base_url}#{mount_path}/external/pending"
       else
         base_url = options[:url] || mcp_env["RAILS_MARKUP_PROD_URL"]
         token = options[:token] || mcp_env["RAILS_MARKUP_PROD_TOKEN"]
         mount_path = options[:mount_path] || mcp_env["RAILS_MARKUP_MOUNT_PATH"] || "/admin/annotations"
-        api_url = "#{base_url}#{mount_path}/external/annotations/pending"
+        api_url = "#{base_url}#{mount_path}/external/pending"
       end
 
       unless base_url

@@ -233,6 +233,50 @@ class McpServerTest < Minitest::Test
     assert_match(/bin\/markup configure/, content["error"])
   end
 
+  def test_config_falls_back_to_mcp_json
+    dir = Dir.mktmpdir
+    mcp_json = File.join(dir, ".mcp.json")
+    File.write(mcp_json, JSON.generate({
+      "mcpServers" => {
+        "rails-markup" => {
+          "env" => {
+            "RAILS_MARKUP_PROD_URL" => "https://fallback.test",
+            "RAILS_MARKUP_PROD_TOKEN" => "fallback_token",
+            "RAILS_MARKUP_DEV_URL" => "http://dev.test:3000",
+            "RAILS_MARKUP_MOUNT_PATH" => "/feedback"
+          }
+        }
+      }
+    }))
+
+    mcp = RailsMarkup::McpServer.new(store: @store, input: StringIO.new, output: @output, dir: dir)
+    assert_equal "https://fallback.test", mcp.send(:prod_url)
+    assert_equal "fallback_token", mcp.send(:prod_token)
+    assert_equal "http://dev.test:3000", mcp.send(:dev_url)
+    assert_equal "/feedback", mcp.send(:mount_path)
+  ensure
+    FileUtils.remove_entry(dir)
+  end
+
+  def test_env_vars_override_mcp_json
+    dir = Dir.mktmpdir
+    mcp_json = File.join(dir, ".mcp.json")
+    File.write(mcp_json, JSON.generate({
+      "mcpServers" => {
+        "rails-markup" => {
+          "env" => { "RAILS_MARKUP_PROD_URL" => "https://fallback.test" }
+        }
+      }
+    }))
+
+    ENV["RAILS_MARKUP_PROD_URL"] = "https://env-override.test"
+    mcp = RailsMarkup::McpServer.new(store: @store, input: StringIO.new, output: @output, dir: dir)
+    assert_equal "https://env-override.test", mcp.send(:prod_url)
+  ensure
+    ENV.delete("RAILS_MARKUP_PROD_URL")
+    FileUtils.remove_entry(dir)
+  end
+
   private
 
   def jsonrpc_request(id, method, params = nil)

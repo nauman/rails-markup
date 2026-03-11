@@ -3,6 +3,7 @@
 require "json"
 require "net/http"
 require "uri"
+require_relative "mcp_config"
 
 module RailsMarkup
   # MCP (Model Context Protocol) server speaking JSON-RPC 2.0 over stdio.
@@ -160,10 +161,11 @@ module RailsMarkup
       }
     ].freeze
 
-    def initialize(store:, input: $stdin, output: $stdout)
+    def initialize(store:, input: $stdin, output: $stdout, dir: Dir.pwd)
       @store  = store
       @input  = input
       @output = output
+      @mcp_config = McpConfig.new(dir: dir)
     end
 
     def start
@@ -182,14 +184,27 @@ module RailsMarkup
     private
 
     # ── Shared config ─────────────────────────────────────────
+    # ENV vars take precedence; fall back to .mcp.json values.
+
+    def config_value(env_key)
+      ENV[env_key] || @mcp_config.raw_env[env_key]
+    end
 
     def mount_path
-      ENV["RAILS_MARKUP_MOUNT_PATH"] || "/admin/annotations"
+      config_value("RAILS_MARKUP_MOUNT_PATH") || "/admin/annotations"
+    end
+
+    def prod_url
+      config_value("RAILS_MARKUP_PROD_URL")
+    end
+
+    def prod_token
+      config_value("RAILS_MARKUP_PROD_TOKEN")
     end
 
     # Build the external API base for a given host URL.
     # All annotation access goes through the engine's external controller:
-    #   {base_url}{mount_path}/external/annotations/...
+    #   {base_url}{mount_path}/external/...
     def external_api_base(base_url)
       "#{base_url}#{mount_path}/external"
     end
@@ -292,7 +307,7 @@ module RailsMarkup
     # external API instead of the in-memory store. No token needed in dev.
 
     def dev_url
-      ENV["RAILS_MARKUP_DEV_URL"]
+      config_value("RAILS_MARKUP_DEV_URL")
     end
 
     def handle_local_or_proxy(action, args, &fallback)
@@ -319,7 +334,7 @@ module RailsMarkup
     end
 
     def dev_fetch_pending
-      resp = http_get("#{external_api_base(dev_url)}/annotations/pending")
+      resp = http_get("#{external_api_base(dev_url)}/pending")
       return { error: "Dev API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
 
       data = JSON.parse(resp.body)
@@ -329,7 +344,7 @@ module RailsMarkup
     def dev_action(annotation_id, action, **params)
       return { error: "No annotationId provided." } unless annotation_id
 
-      resp = http_patch("#{external_api_base(dev_url)}/annotations/#{annotation_id}/#{action}", params: params)
+      resp = http_patch("#{external_api_base(dev_url)}/#{annotation_id}/#{action}", params: params)
       return { error: "Dev API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
 
       JSON.parse(resp.body)
@@ -338,14 +353,14 @@ module RailsMarkup
     # ── Production API ────────────────────────────────────────
 
     def handle_fetch_production(args)
-      base = args["baseUrl"] || ENV["RAILS_MARKUP_PROD_URL"]
-      token = args["token"] || ENV["RAILS_MARKUP_PROD_TOKEN"]
+      base = args["baseUrl"] || prod_url
+      token = args["token"] || prod_token
       return { error: "No base URL. Run: bin/markup configure --prod-url=URL" } unless base
 
       mark_acknowledged = args["markAcknowledged"] != false
       api = external_api_base(base)
 
-      resp = http_get("#{api}/annotations/pending", token: token)
+      resp = http_get("#{api}/pending", token: token)
       return { error: "API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
 
       data = JSON.parse(resp.body)
@@ -353,7 +368,7 @@ module RailsMarkup
 
       if mark_acknowledged && annotations.any?
         annotations.each do |ann|
-          http_patch("#{api}/annotations/#{ann["id"]}/acknowledge", token: token)
+          http_patch("#{api}/#{ann["id"]}/acknowledge", token: token)
         end
       end
 
@@ -361,14 +376,14 @@ module RailsMarkup
     end
 
     def handle_production_action(args, action, **params)
-      base = args["baseUrl"] || ENV["RAILS_MARKUP_PROD_URL"]
-      token = args["token"] || ENV["RAILS_MARKUP_PROD_TOKEN"]
+      base = args["baseUrl"] || prod_url
+      token = args["token"] || prod_token
       annotation_id = args["annotationId"]
       return { error: "No base URL. Run: bin/markup configure --prod-url=URL" } unless base
       return { error: "No annotationId provided." } unless annotation_id
 
       api = external_api_base(base)
-      resp = http_patch("#{api}/annotations/#{annotation_id}/#{action}", token: token, params: params)
+      resp = http_patch("#{api}/#{annotation_id}/#{action}", token: token, params: params)
       return { error: "API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
 
       JSON.parse(resp.body)
