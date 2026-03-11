@@ -94,6 +94,14 @@ module RailsMarkup
         say "  2. Visit dashboard: #{options[:mount_path]}"
         say "  3. Configure auth in config/initializers/rails_markup.rb"
         say ""
+        dev_url = detect_dev_url
+        unless dev_url == "http://localhost:3000"
+          say "Detected dev server: #{dev_url} (from Procfile.dev)"
+        end
+        say ""
+        say "Not using localhost:3000? Update your dev URL:", :yellow
+        say "  bin/markup configure --dev-url=http://YOUR_HOST:PORT"
+        say ""
         say "CLI commands:"
         say "  bin/markup fetch              # See pending annotations"
         say "  bin/markup fetch --env=production  # From production"
