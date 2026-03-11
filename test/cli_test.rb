@@ -128,6 +128,29 @@ class CliTest < Minitest::Test
     assert_match(/No production token/, output)
   end
 
+  # -- McpConfig detect_command --
+
+  def test_mcp_json_uses_bin_markup_when_present
+    FileUtils.mkdir_p(File.join(@dir, "bin"))
+    File.write(File.join(@dir, "bin", "markup"), "#!/usr/bin/env ruby")
+
+    run_cli("configure", "--dev-url", "http://localhost:3000")
+
+    config = JSON.parse(File.read(File.join(@dir, ".mcp.json")))
+    server = config["mcpServers"]["rails-markup"]
+    assert server["command"].end_with?("bin/markup"), "Expected bin/markup, got #{server["command"]}"
+    assert_equal ["mcp"], server["args"]
+  end
+
+  def test_mcp_json_falls_back_to_bundle_exec
+    run_cli("configure", "--dev-url", "http://localhost:3000")
+
+    config = JSON.parse(File.read(File.join(@dir, ".mcp.json")))
+    server = config["mcpServers"]["rails-markup"]
+    assert_equal "bundle", server["command"]
+    assert_equal ["exec", "rails-markup", "mcp"], server["args"]
+  end
+
   # -- help --
 
   def test_bare_command_shows_help

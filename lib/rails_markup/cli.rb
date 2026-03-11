@@ -224,16 +224,14 @@ module RailsMarkup
     def annotation_table(annotations)
       rows = annotations.map do |ann|
         page = URI.parse(ann["pageUrl"]).path rescue ann["pageUrl"]
-        page = truncate(page, 25)
-        content = truncate(ann["content"].to_s, 40)
-        ["##{ann["id"]}", ann["intent"], ann["severity"], page, content]
+        ["##{ann["id"]}", ann["intent"], ann["severity"], truncate(page, 30)]
       end
 
       Lipgloss::Table.new
-        .headers(["ID", "Intent", "Severity", "Page", "Feedback"])
+        .headers(["ID", "Intent", "Severity", "Page"])
         .rows(rows)
         .border(:rounded)
-        .style_func(rows: rows.size, columns: 5) do |row, _col|
+        .style_func(rows: rows.size, columns: 4) do |row, _col|
           if row == Lipgloss::Table::HEADER_ROW
             HEADER_STYLE
           else

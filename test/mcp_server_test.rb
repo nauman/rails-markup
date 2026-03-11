@@ -174,6 +174,47 @@ class McpServerTest < Minitest::Test
     assert_equal 2, responses[1]["id"]
   end
 
+  def test_mount_path_defaults_to_admin_annotations
+    mcp = RailsMarkup::McpServer.new(store: @store, input: StringIO.new, output: @output)
+    assert_equal "/admin/annotations", mcp.send(:mount_path)
+  end
+
+  def test_mount_path_reads_from_env
+    ENV["RAILS_MARKUP_MOUNT_PATH"] = "/feedback"
+    mcp = RailsMarkup::McpServer.new(store: @store, input: StringIO.new, output: @output)
+    assert_equal "/feedback", mcp.send(:mount_path)
+  ensure
+    ENV.delete("RAILS_MARKUP_MOUNT_PATH")
+  end
+
+  def test_external_api_base_builds_correct_path
+    mcp = RailsMarkup::McpServer.new(store: @store, input: StringIO.new, output: @output)
+    assert_equal "http://localhost:3000/admin/annotations/external",
+      mcp.send(:external_api_base, "http://localhost:3000")
+  end
+
+  def test_external_api_base_with_custom_mount
+    ENV["RAILS_MARKUP_MOUNT_PATH"] = "/feedback"
+    mcp = RailsMarkup::McpServer.new(store: @store, input: StringIO.new, output: @output)
+    assert_equal "https://myapp.com/feedback/external",
+      mcp.send(:external_api_base, "https://myapp.com")
+  ensure
+    ENV.delete("RAILS_MARKUP_MOUNT_PATH")
+  end
+
+  def test_fetch_production_without_url_returns_error
+    input = StringIO.new(jsonrpc_request(1, "tools/call", {
+      name: "rails_markup_fetch_production", arguments: {}
+    }))
+    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
+    mcp.start
+
+    response = parse_output
+    content = JSON.parse(response["result"]["content"].first["text"])
+    assert_match(/No base URL/, content["error"])
+    assert_match(/bin\/markup configure/, content["error"])
+  end
+
   private
 
   def jsonrpc_request(id, method, params = nil)
