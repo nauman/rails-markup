@@ -142,6 +142,54 @@ module RailsMarkup
       say "─" * 60
     end
 
+    desc "setup-production", "Generate a token and configure production access"
+    method_option :url, type: :string, desc: "Production URL (e.g. https://yourapp.com)"
+    def setup_production
+      require "securerandom"
+
+      prod_url = options[:url]
+      unless prod_url
+        say "Usage: bin/markup setup-production --url=https://yourapp.com", :red
+        return
+      end
+
+      token = SecureRandom.base36(24)
+
+      # Save to .mcp.json
+      config = McpConfig.new
+      config.update_env({
+        "RAILS_MARKUP_PROD_URL" => prod_url,
+        "RAILS_MARKUP_PROD_TOKEN" => token
+      })
+
+      say ""
+      say "Production token generated!", :green
+      say ""
+      say "Token: #{token}"
+      say ""
+      say "Saved to .mcp.json — CLI and MCP tools are ready."
+      say ""
+      say "Now add the same token to your Rails app:"
+      say ""
+      say "  Option A: Rails credentials (recommended)"
+      say "    rails credentials:edit"
+      say "    # Add:"
+      say "    # rails_markup:"
+      say "    #   api_token: #{token}"
+      say ""
+      say "  Option B: Environment variable"
+      say "    RAILS_MARKUP_API_TOKEN=#{token}"
+      say ""
+      say "Then in config/initializers/rails_markup.rb:"
+      say '  config.api_token = Rails.application.credentials.dig(:rails_markup, :api_token)'
+      say "  # or"
+      say '  config.api_token = ENV["RAILS_MARKUP_API_TOKEN"]'
+      say ""
+      say "Deploy, then verify:"
+      say "  bin/markup fetch --env=production"
+      say ""
+    end
+
     def self.exit_on_failure?
       true
     end
