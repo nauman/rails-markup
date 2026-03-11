@@ -10,7 +10,7 @@ Point-and-click annotation tool for Rails apps. Click any element, describe what
 2. **Open your app** — the annotation toolbar appears as a floating button
 3. **Click any element** — hover to highlight, click to annotate with screenshots
 4. **Draw on screenshots** — arrows, rectangles, highlights on captured elements
-5. **Agent reads it** — AI calls `rails_markup_get_all_pending` via MCP
+5. **Agent reads it** — AI calls `rails_markup_pending` via MCP
 6. **Agent fixes it** — resolves the annotation and moves on
 
 ## Install
@@ -119,14 +119,29 @@ Screenshots are stored as base64 in annotation metadata and displayed in the das
 ## CLI
 
 ```bash
-bin/markup init                      # Interactive setup wizard (TUI)
-bin/markup server                    # HTTP + MCP server
-bin/markup mcp                       # MCP-only server (stdio)
-bin/markup fetch                     # Fetch pending from dev
-bin/markup fetch --env=production    # Fetch from production
-bin/markup configure                 # Set .mcp.json env vars
-bin/markup status                    # Show config (tokens masked)
+# Setup
+bin/markup init                        # Interactive setup wizard (TUI)
+bin/markup configure                   # Set .mcp.json env vars
+bin/markup status                      # Show config (tokens masked)
 bin/markup setup-production --url=URL  # Generate token + configure
+
+# Server
+bin/markup server                      # HTTP + MCP server
+bin/markup mcp                         # MCP-only server (stdio)
+
+# Annotations (match MCP tool verbs)
+bin/markup pending                     # Fetch pending from dev
+bin/markup pending --production        # Fetch from production
+bin/markup resolve 42 --summary "..."  # Resolve an annotation
+bin/markup dismiss 42 --reason "..."   # Dismiss an annotation
+bin/markup reply 42 "message"          # Reply to an annotation
+bin/markup acknowledge 42              # Mark as acknowledged
+bin/markup watch                       # Poll for new annotations
+bin/markup watch --production          # Watch production
+
+# Info
+bin/markup sessions                    # Session info (MCP only)
+bin/markup session ID                  # Session detail (MCP only)
 ```
 
 ### Setup Wizard
@@ -162,21 +177,36 @@ Add to `.mcp.json`:
 }
 ```
 
-### MCP Tools
+### MCP Tools (8 Unified)
+
+Each tool accepts an optional `environment` param (`"development"` | `"production"`). Default: `"development"`.
 
 | Tool | Purpose |
 |------|---------|
-| `rails_markup_get_all_pending` | All pending annotations |
-| `rails_markup_get_pending` | Pending for one session |
-| `rails_markup_watch_annotations` | Block until new annotations arrive |
+| `rails_markup_sessions` | List active sessions (dev only) |
+| `rails_markup_session` | Get session with all annotations (dev only) |
+| `rails_markup_pending` | All pending (pass `sessionId` to filter, `environment: "production"` for prod) |
+| `rails_markup_watch` | Block until new annotations arrive |
 | `rails_markup_acknowledge` | Mark as seen |
 | `rails_markup_resolve` | Resolve with summary |
 | `rails_markup_dismiss` | Dismiss with reason |
 | `rails_markup_reply` | Add reply to thread |
-| `rails_markup_fetch_production` | Fetch pending from production |
-| `rails_markup_resolve_production` | Resolve production annotation |
-| `rails_markup_dismiss_production` | Dismiss production annotation |
-| `rails_markup_reply_production` | Reply to production annotation |
+
+### Migrating from Legacy Tool Names
+
+Old names still work but emit deprecation warnings. They will be removed in v1.3.0.
+
+| Old Name | New Name |
+|----------|----------|
+| `rails_markup_get_all_pending` | `rails_markup_pending` |
+| `rails_markup_get_pending` | `rails_markup_pending` (with `sessionId`) |
+| `rails_markup_list_sessions` | `rails_markup_sessions` |
+| `rails_markup_get_session` | `rails_markup_session` |
+| `rails_markup_watch_annotations` | `rails_markup_watch` |
+| `rails_markup_fetch_production` | `rails_markup_pending` (with `environment: "production"`) |
+| `rails_markup_resolve_production` | `rails_markup_resolve` (with `environment: "production"`) |
+| `rails_markup_dismiss_production` | `rails_markup_dismiss` (with `environment: "production"`) |
+| `rails_markup_reply_production` | `rails_markup_reply` (with `environment: "production"`) |
 
 ## Annotation Data
 
@@ -199,7 +229,7 @@ Each annotation includes:
 Browser Toolbar                    AI Agent (Claude Code, Cursor)
     |                                    |
     | Same-origin API                    | MCP (stdio JSON-RPC)
-    | (POST /api/*)                      | or CLI (bin/markup fetch)
+    | (POST /api/*)                      | or CLI (bin/markup pending)
     v                                    v
 +----------------------------------------------------------+
 |                  Rails Engine                             |
