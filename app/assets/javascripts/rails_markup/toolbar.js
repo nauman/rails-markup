@@ -35,6 +35,8 @@
     // Config
     endpoint: "/feedback/api",
     accent: "indigo",
+    position: "bl",
+    size: "default",
     enableScreenshots: true,
 
     // DOM refs (set in init)
@@ -43,6 +45,8 @@
     init(opts = {}) {
       this.endpoint = opts.endpoint || "/feedback/api";
       this.accent = opts.accent || "indigo";
+      this.position = opts.position || "bl";
+      this.size = opts.size || "default";
       this.enableScreenshots = opts.enableScreenshots !== false;
       this._currentPathname = window.location.pathname;
 
@@ -84,13 +88,13 @@
         @keyframes rm-toast-in { from{opacity:0;transform:translateY(16px) scale(0.95)} to{opacity:1;transform:translateY(0) scale(1)} }
         @keyframes rm-toast-out { from{opacity:1;transform:translateY(0) scale(1)} to{opacity:0;transform:translateY(16px) scale(0.95)} }
         #rm-toolbar-root * { box-sizing:border-box; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif; }
-        .rm-fab { position:fixed; bottom:24px; left:24px; z-index:9980; width:48px; height:48px; border-radius:50%; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s; box-shadow:0 4px 12px rgba(0,0,0,0.15); }
+        .rm-fab { position:fixed; z-index:9980; border-radius:50%; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s; box-shadow:0 4px 12px rgba(0,0,0,0.15); }
         .rm-fab svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
         .rm-fab-badge { position:absolute; top:-4px; right:-4px; min-width:20px; height:20px; padding:0 4px; border-radius:10px; background:#ef4444; color:#fff; font-size:11px; font-weight:700; display:none; align-items:center; justify-content:center; }
-        .rm-panel-toggle { position:fixed; bottom:24px; left:80px; z-index:9980; width:32px; height:32px; border-radius:50%; border:1px solid #e5e7eb; background:rgba(255,255,255,0.9); cursor:pointer; display:none; align-items:center; justify-content:center; color:#6b7280; transition:all 0.2s; backdrop-filter:blur(8px); }
+        .rm-panel-toggle { position:fixed; z-index:9980; width:32px; height:32px; border-radius:50%; border:1px solid #e5e7eb; background:rgba(255,255,255,0.9); cursor:pointer; display:none; align-items:center; justify-content:center; color:#6b7280; transition:all 0.2s; backdrop-filter:blur(8px); }
         .rm-panel-toggle:hover { color:#4361ee; }
         .rm-panel-toggle svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
-        .rm-toast-container { position:fixed; bottom:80px; left:24px; z-index:9983; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+        .rm-toast-container { position:fixed; z-index:9983; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
         .rm-pins-container { position:absolute; top:0; left:0; width:100%; z-index:9979; pointer-events:auto; }
         .rm-popup { display:none; position:fixed; z-index:9982; width:360px; background:rgba(255,255,255,0.95); backdrop-filter:blur(12px); border-radius:16px; box-shadow:0 25px 50px rgba(0,0,0,0.1); border:1px solid rgba(229,231,235,0.8); padding:16px; }
         .rm-popup textarea { width:100%; font-size:13px; border:1px solid #e5e7eb; border-radius:12px; padding:12px; resize:none; outline:none; font-family:inherit; transition:border-color 0.15s,box-shadow 0.15s; }
@@ -105,7 +109,7 @@
         .rm-btn-cancel:hover { color:#6b7280; }
         .rm-btn-submit { padding:6px 16px; font-size:12px; font-weight:500; color:#fff; border:none; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
         .rm-btn-submit kbd { font-size:9px; opacity:0.6; font-family:sans-serif; }
-        .rm-panel { display:none; position:fixed; bottom:80px; left:24px; z-index:9981; width:380px; max-height:60vh; background:rgba(255,255,255,0.95); backdrop-filter:blur(12px); border-radius:16px; box-shadow:0 25px 50px rgba(0,0,0,0.1); border:1px solid rgba(229,231,235,0.8); flex-direction:column; }
+        .rm-panel { display:none; position:fixed; z-index:9981; width:380px; max-height:60vh; background:rgba(255,255,255,0.95); backdrop-filter:blur(12px); border-radius:16px; box-shadow:0 25px 50px rgba(0,0,0,0.1); border:1px solid rgba(229,231,235,0.8); flex-direction:column; }
         .rm-panel-header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid #f3f4f6; }
         .rm-panel-header h3 { font-size:14px; font-weight:600; color:#1f2937; }
         .rm-panel-count { min-width:20px; text-align:center; padding:2px 6px; font-size:10px; font-weight:600; border-radius:10px; }
@@ -150,15 +154,34 @@
       const accentLight = this._accentLight();
       const accentText = this._accentText();
 
+      // Position: bl (bottom-left), br (bottom-right), tl (top-left), tr (top-right)
+      const posMap = { bl: "bottom:24px;left:24px;", br: "bottom:24px;right:24px;", tl: "top:24px;left:24px;", tr: "top:24px;right:24px;" };
+      const fabPos = posMap[this.position] || posMap.bl;
+
+      // Size: default (48px), compact (40px), slim (32px)
+      const sizeMap = { "default": { dim: 48, icon: 20 }, compact: { dim: 40, icon: 18 }, slim: { dim: 32, icon: 16 } };
+      const fabSize = sizeMap[this.size] || sizeMap["default"];
+
+      // Panel offset matches FAB position
+      const isRight = this.position === "br" || this.position === "tr";
+      const isTop = this.position === "tl" || this.position === "tr";
+      const panelToggleStyle = isRight ? `${isTop ? 'top' : 'bottom'}:24px;right:${fabSize.dim + 8 + 24}px;` : `${isTop ? 'top' : 'bottom'}:24px;left:${fabSize.dim + 8 + 24}px;`;
+      const panelStyle = isRight
+        ? `${isTop ? 'top' : 'bottom'}:${fabSize.dim + 32}px;right:24px;`
+        : `${isTop ? 'top' : 'bottom'}:${fabSize.dim + 32}px;left:24px;`;
+      const toastStyle = isRight
+        ? `${isTop ? 'top' : 'bottom'}:${fabSize.dim + 32}px;right:24px;`
+        : `${isTop ? 'top' : 'bottom'}:${fabSize.dim + 32}px;left:24px;`;
+
       root.innerHTML = `
-        <button class="rm-fab" id="rm-fab" style="background:${accentBg};color:#fff;" title="Toggle annotation mode" aria-label="Toggle annotation mode" aria-expanded="false" aria-controls="rm-panel">
-          <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        <button class="rm-fab" id="rm-fab" style="${fabPos}width:${fabSize.dim}px;height:${fabSize.dim}px;background:${accentBg};color:#fff;" title="Toggle annotation mode" aria-label="Toggle annotation mode" aria-expanded="false" aria-controls="rm-panel">
+          <svg viewBox="0 0 24 24" style="width:${fabSize.icon}px;height:${fabSize.icon}px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
           <span class="rm-fab-badge" id="rm-fab-badge"></span>
         </button>
-        <button class="rm-panel-toggle" id="rm-panel-toggle" title="View annotations" aria-label="View annotations" aria-controls="rm-panel">
+        <button class="rm-panel-toggle" id="rm-panel-toggle" style="${panelToggleStyle}" title="View annotations" aria-label="View annotations" aria-controls="rm-panel">
           <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
         </button>
-        <div class="rm-toast-container" id="rm-toast-container"></div>
+        <div class="rm-toast-container" id="rm-toast-container" style="${toastStyle}"></div>
         <div class="rm-pins-container" id="rm-pins-container"></div>
         <div class="rm-popup" id="rm-popup" role="dialog" aria-label="Add annotation" aria-modal="false">
           <div style="margin-bottom:12px">
@@ -188,7 +211,7 @@
             </button>
           </div>
         </div>
-        <div class="rm-panel" id="rm-panel" role="dialog" aria-label="Annotations panel">
+        <div class="rm-panel" id="rm-panel" style="${panelStyle}" role="dialog" aria-label="Annotations panel">
           <div class="rm-panel-header">
             <div style="display:flex;align-items:center;gap:8px">
               <h3>Feedback</h3>
@@ -324,9 +347,10 @@
     _activateMode() {
       document.body.style.cursor = "crosshair";
       const fab = document.getElementById("rm-fab");
+      const iconSize = this._fabIconSize();
       fab.style.transform = "scale(0.9)";
       fab.style.boxShadow = `0 0 0 3px ${this._accentBg()}, 0 0 0 6px rgba(99,102,241,0.2)`;
-      fab.innerHTML = '<svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M6 18L18 6M6 6l12 12"/></svg><span class="rm-fab-badge" id="rm-fab-badge">' + (document.getElementById("rm-fab-badge")?.textContent || "") + '</span>';
+      fab.innerHTML = `<svg viewBox="0 0 24 24" style="width:${iconSize}px;height:${iconSize}px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M6 18L18 6M6 6l12 12"/></svg><span class="rm-fab-badge" id="rm-fab-badge">${document.getElementById("rm-fab-badge")?.textContent || ""}</span>`;
       document.addEventListener("mousemove", this._boundMouseMove, true);
       document.addEventListener("mousedown", this._boundMouseDown, true);
       document.addEventListener("mouseup", this._boundMouseUp, true);
@@ -339,9 +363,10 @@
       document.body.style.cursor = "";
       const fab = document.getElementById("rm-fab");
       if (fab) {
+        const iconSize = this._fabIconSize();
         fab.style.transform = "";
         fab.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
-        fab.innerHTML = '<svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><span class="rm-fab-badge" id="rm-fab-badge">' + (this.annotations.length || "") + '</span>';
+        fab.innerHTML = `<svg viewBox="0 0 24 24" style="width:${iconSize}px;height:${iconSize}px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><span class="rm-fab-badge" id="rm-fab-badge">${this.annotations.length || ""}</span>`;
         this._updateCount();
       }
       document.removeEventListener("mousemove", this._boundMouseMove, true);
@@ -1081,6 +1106,13 @@
       } catch {
         return null;
       }
+    },
+
+    // ---- Size helpers ----
+
+    _fabIconSize() {
+      const map = { "default": 20, compact: 18, slim: 16 };
+      return map[this.size] || 20;
     },
 
     // ---- Color helpers ----

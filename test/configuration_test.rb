@@ -127,4 +127,44 @@ class ConfigurationTest < ActiveSupport::TestCase
     config.enable_screenshots = false
     assert_not config.enable_screenshots
   end
+
+  # --- Toolbar position ---
+
+  test "defaults toolbar_position to bl" do
+    config = RailsMarkup::Configuration.new
+    assert_equal "bl", config.toolbar_position
+  end
+
+  test "toolbar_position accepts valid positions" do
+    config = RailsMarkup::Configuration.new
+    %w[tl tr br bl].each do |pos|
+      config.toolbar_position = pos
+      assert_equal pos, config.toolbar_position
+    end
+  end
+
+  test "toolbar_position rejects invalid value" do
+    config = RailsMarkup::Configuration.new
+    assert_raises(ArgumentError) { config.toolbar_position = "center" }
+  end
+
+  # --- Toolbar size ---
+
+  test "defaults toolbar_size to default" do
+    config = RailsMarkup::Configuration.new
+    assert_equal "default", config.toolbar_size
+  end
+
+  test "toolbar_size accepts valid sizes" do
+    config = RailsMarkup::Configuration.new
+    %w[slim compact default].each do |size|
+      config.toolbar_size = size
+      assert_equal size, config.toolbar_size
+    end
+  end
+
+  test "toolbar_size rejects invalid value" do
+    config = RailsMarkup::Configuration.new
+    assert_raises(ArgumentError) { config.toolbar_size = "huge" }
+  end
 end

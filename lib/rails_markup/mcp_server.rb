@@ -203,10 +203,16 @@ module RailsMarkup
 
       case method
       when "initialize"
+        # Negotiate protocol version — prefer client's requested version if we support it,
+        # fall back to latest we support. Claude Code may send 2025-06-18.
+        client_version = params.dig("protocolVersion")
+        supported = %w[2025-06-18 2025-03-26 2024-11-05]
+        negotiated = supported.include?(client_version) ? client_version : supported.first
+
         result_response(id, {
-          protocolVersion: "2024-11-05",
+          protocolVersion: negotiated,
           capabilities: { tools: {} },
-          serverInfo: { name: "rails-markup", version: RailsMarkup::VERSION }
+          serverInfo: { name: "rails-markup", title: "Rails Markup", version: RailsMarkup::VERSION }
         })
       when "notifications/initialized"
         nil # No response for notifications

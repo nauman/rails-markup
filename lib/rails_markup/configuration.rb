@@ -2,7 +2,9 @@
 
 module RailsMarkup
   class Configuration
-    ALLOWED_ACCENTS = %w[indigo amber blue emerald rose].freeze
+    ALLOWED_ACCENTS   = %w[indigo amber blue emerald rose].freeze
+    ALLOWED_POSITIONS = %w[tl tr br bl].freeze
+    ALLOWED_SIZES     = %w[slim compact default].freeze
 
     # Base controller class name for dashboard/API controllers.
     # Set to a controller that provides authentication.
@@ -48,12 +50,22 @@ module RailsMarkup
     # Default: true
     attr_accessor :enable_screenshots
 
+    # FAB button position: "bl" (bottom-left), "br" (bottom-right),
+    # "tl" (top-left), "tr" (top-right). Default: "bl"
+    attr_reader :toolbar_position
+
+    # FAB button size: "default" (48px), "compact" (40px), "slim" (32px).
+    # Default: "default"
+    attr_reader :toolbar_size
+
     def initialize
       @base_controller_class = "RailsMarkup::ApplicationController"
       @api_token = nil
       @table_name = "rails_markup_annotations"
       @per_page = 25
       @toolbar_accent = "indigo"
+      @toolbar_position = "bl"
+      @toolbar_size = "default"
       @return_url = nil
       @dashboard_layout = "rails_markup/application"
       @author_name_method = :email
@@ -85,6 +97,22 @@ module RailsMarkup
       end
 
       @toolbar_accent = value.to_s
+    end
+
+    def toolbar_position=(value)
+      unless ALLOWED_POSITIONS.include?(value.to_s)
+        raise ArgumentError, "toolbar_position must be one of: #{ALLOWED_POSITIONS.join(', ')}"
+      end
+
+      @toolbar_position = value.to_s
+    end
+
+    def toolbar_size=(value)
+      unless ALLOWED_SIZES.include?(value.to_s)
+        raise ArgumentError, "toolbar_size must be one of: #{ALLOWED_SIZES.join(', ')}"
+      end
+
+      @toolbar_size = value.to_s
     end
   end
 

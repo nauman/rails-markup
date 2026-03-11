@@ -20,6 +20,24 @@ class McpServerTest < Minitest::Test
     assert_equal "rails-markup", response["result"]["serverInfo"]["name"]
   end
 
+  def test_initialize_negotiates_protocol_version
+    input = StringIO.new(jsonrpc_request(1, "initialize", { protocolVersion: "2025-06-18" }))
+    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
+    mcp.start
+
+    response = parse_output
+    assert_equal "2025-06-18", response["result"]["protocolVersion"]
+  end
+
+  def test_initialize_falls_back_for_unknown_protocol_version
+    input = StringIO.new(jsonrpc_request(1, "initialize", { protocolVersion: "9999-01-01" }))
+    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
+    mcp.start
+
+    response = parse_output
+    assert_equal "2025-06-18", response["result"]["protocolVersion"]
+  end
+
   def test_tools_list
     input = StringIO.new(jsonrpc_request(1, "tools/list"))
     mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
