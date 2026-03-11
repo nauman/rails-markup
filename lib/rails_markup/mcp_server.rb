@@ -261,31 +261,35 @@ module RailsMarkup
     end
 
     # -- Dev API proxy --
-    # When RAILS_MARKUP_DEV_URL is set, local tools proxy to the dev server's
-    # internal API instead of the in-memory store. This lets MCP tools query
-    # the Rails database directly.
+    # When RAILS_MARKUP_DEV_URL is set, local tools proxy to the engine's
+    # external API instead of the in-memory store. No token needed in dev —
+    # the engine skips auth when api_token is nil.
 
     def dev_url
       ENV["RAILS_MARKUP_DEV_URL"]
     end
 
+    def dev_mount_path
+      ENV["RAILS_MARKUP_MOUNT_PATH"] || "/admin/annotations"
+    end
+
     def dev_token
-      ENV["RAILS_MARKUP_DEV_TOKEN"] || ENV["RAILS_MARKUP_PROD_TOKEN"]
+      ENV["RAILS_MARKUP_DEV_TOKEN"]
+    end
+
+    def dev_api_base
+      "#{dev_url}#{dev_mount_path}/external"
     end
 
     def handle_local_or_proxy(action, args, &fallback)
-      return fallback.call unless dev_url && dev_token
+      return fallback.call unless dev_url
 
       case action
       when :list_sessions
-        # No session concept in DB — return empty (annotations are sessionless)
         []
       when :get_session
         { error: "Sessions not available when using dev API proxy" }
-      when :get_pending
-        # No session concept — return all pending
-        dev_fetch_pending
-      when :get_all_pending
+      when :get_pending, :get_all_pending
         dev_fetch_pending
       when :acknowledge
         dev_action(args["annotationId"], "acknowledge")
@@ -301,7 +305,7 @@ module RailsMarkup
     end
 
     def dev_fetch_pending
-      resp = prod_get("#{dev_url}/internal/annotations/pending", dev_token)
+      resp = prod_get("#{dev_api_base}/annotations/pending", dev_token)
       return { error: "Dev API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
 
       data = JSON.parse(resp.body)
@@ -311,7 +315,7 @@ module RailsMarkup
     def dev_action(annotation_id, action, **params)
       return { error: "No annotationId provided." } unless annotation_id
 
-      resp = prod_patch("#{dev_url}/internal/annotations/#{annotation_id}/#{action}", dev_token, params)
+      resp = prod_patch("#{dev_api_base}/annotations/#{annotation_id}/#{action}", dev_token, params)
       return { error: "Dev API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
 
       JSON.parse(resp.body)
@@ -364,10 +368,10 @@ module RailsMarkup
       JSON.parse(resp.body)
     end
 
-    def prod_get(url, token)
+    def prod_get(url, token = nil)
       uri = URI.parse(url)
       req = Net::HTTP::Get.new(uri)
-      req["Authorization"] = "Bearer #{token}"
+      req["Authorization"] = "Bearer #{token}" if token
       req["Accept"] = "application/json"
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = uri.scheme == "https"
@@ -376,10 +380,10 @@ module RailsMarkup
       http.request(req)
     end
 
-    def prod_patch(url, token, params = {})
+    def prod_patch(url, token = nil, params = {})
       uri = URI.parse(url)
       req = Net::HTTP::Patch.new(uri)
-      req["Authorization"] = "Bearer #{token}"
+      req["Authorization"] = "Bearer #{token}" if token
       req["Content-Type"] = "application/json"
       req["Accept"] = "application/json"
       req.body = params.to_json unless params.empty?

@@ -49,7 +49,13 @@ module RailsMarkup
 
       def authenticate_token!
         token = RailsMarkup.config.api_token
-        return head(:not_found) if token.nil?
+
+        # No token configured — allow in development, block in production
+        if token.nil?
+          return if Rails.env.development? || Rails.env.test?
+
+          return head(:not_found)
+        end
 
         provided = request.headers["Authorization"]&.delete_prefix("Bearer ")
         head(:unauthorized) unless ActiveSupport::SecurityUtils.secure_compare(provided.to_s, token)

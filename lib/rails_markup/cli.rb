@@ -81,27 +81,40 @@ module RailsMarkup
       desc: "Which environment to fetch from"
     method_option :url, type: :string, desc: "Override base URL"
     method_option :token, type: :string, desc: "Override API token"
+    method_option :mount_path, type: :string, desc: "Engine mount path (default: /admin/annotations)"
     def fetch
       config = McpConfig.new
       mcp_env = config.exist? ? config.raw_env : {}
 
       target = options[:env]
-      base_url = options[:url] || mcp_env[target == "dev" ? "RAILS_MARKUP_DEV_URL" : "RAILS_MARKUP_PROD_URL"]
-      token = options[:token] || mcp_env[target == "dev" ? "RAILS_MARKUP_DEV_TOKEN" : "RAILS_MARKUP_PROD_TOKEN"]
+
+      if target == "dev"
+        base_url = options[:url] || mcp_env["RAILS_MARKUP_DEV_URL"]
+        token = options[:token] || mcp_env["RAILS_MARKUP_DEV_TOKEN"] # optional for dev
+        mount_path = options[:mount_path] || mcp_env["RAILS_MARKUP_MOUNT_PATH"] || "/admin/annotations"
+        api_url = "#{base_url}#{mount_path}/external/annotations/pending"
+      else
+        base_url = options[:url] || mcp_env["RAILS_MARKUP_PROD_URL"]
+        token = options[:token] || mcp_env["RAILS_MARKUP_PROD_TOKEN"]
+        mount_path = options[:mount_path] || mcp_env["RAILS_MARKUP_MOUNT_PATH"] || "/admin/annotations"
+        api_url = "#{base_url}#{mount_path}/external/annotations/pending"
+      end
 
       unless base_url
+        flag = target == "dev" ? "dev" : "prod"
         say "No #{target} URL. Set it via:", :red
-        say "  bin/markup configure --#{target.tr('production', 'prod')}-url URL --#{target.tr('production', 'prod')}-token TOKEN"
+        say "  bin/markup configure --#{flag}-url URL"
         return
       end
 
-      unless token
-        say "No #{target} token configured.", :red
+      if target == "production" && !token
+        say "No production token configured.", :red
+        say "  bin/markup configure --prod-token TOKEN"
         return
       end
 
-      say "Fetching from #{target}: #{base_url}", :green
-      annotations = fetch_pending(base_url, token)
+      say "Fetching from #{target}: #{base_url}#{mount_path}", :green
+      annotations = fetch_pending(api_url, token)
 
       if annotations.empty?
         say "No pending annotations.", :yellow
@@ -124,14 +137,14 @@ module RailsMarkup
 
     private
 
-    def fetch_pending(base_url, token)
+    def fetch_pending(url, token = nil)
       require "net/http"
       require "uri"
       require "json"
 
-      uri = URI.parse("#{base_url}/internal/annotations/pending")
+      uri = URI.parse(url)
       req = Net::HTTP::Get.new(uri)
-      req["Authorization"] = "Bearer #{token}"
+      req["Authorization"] = "Bearer #{token}" if token
       req["Accept"] = "application/json"
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = uri.scheme == "https"

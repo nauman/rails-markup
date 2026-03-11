@@ -11,10 +11,11 @@ module RailsMarkup
     SERVER_KEY = "rails-markup"
 
     ENV_KEYS = {
-      "prod_url"   => "RAILS_MARKUP_PROD_URL",
-      "prod_token" => "RAILS_MARKUP_PROD_TOKEN",
-      "dev_url"    => "RAILS_MARKUP_DEV_URL",
-      "dev_token"  => "RAILS_MARKUP_DEV_TOKEN"
+      "prod_url"    => "RAILS_MARKUP_PROD_URL",
+      "prod_token"  => "RAILS_MARKUP_PROD_TOKEN",
+      "dev_url"     => "RAILS_MARKUP_DEV_URL",
+      "dev_token"   => "RAILS_MARKUP_DEV_TOKEN",
+      "mount_path"  => "RAILS_MARKUP_MOUNT_PATH"
     }.freeze
 
     def initialize(dir: Dir.pwd)
