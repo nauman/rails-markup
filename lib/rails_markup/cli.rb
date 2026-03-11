@@ -68,12 +68,13 @@ module RailsMarkup
       end
 
       env = config.display_env
-      $stdout.puts "#{LABEL_STYLE.render(".mcp.json")}  #{HINT_STYLE.render("(#{Dir.pwd})")}"
+      say ""
       if env.empty?
         say "  (no env vars set for rails-markup)"
       else
         $stdout.puts env_table(env)
       end
+      say ""
     end
 
     desc "fetch", "Fetch pending annotations from dev or production"
@@ -225,7 +226,7 @@ module RailsMarkup
 
     def env_table(env_hash)
       rows = env_hash.map { |k, v| [k, v] }
-      Lipgloss::Table.new
+      table = Lipgloss::Table.new
         .headers(["Variable", "Value"])
         .rows(rows)
         .border(:rounded)
@@ -237,6 +238,10 @@ module RailsMarkup
           end
         end
         .render
+
+      title = LABEL_STYLE.render(" Rails Markup ")
+      path = HINT_STYLE.render(".mcp.json")
+      "#{title} #{path}\n\n#{table}"
     end
   end
 end
