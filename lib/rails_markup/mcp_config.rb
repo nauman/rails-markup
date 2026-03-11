@@ -35,6 +35,8 @@ module RailsMarkup
       read.dig("mcpServers", SERVER_KEY, "env") || {}
     end
 
+    alias_method :raw_env, :env
+
     def update_env(new_vars)
       config = exist? ? read : skeleton
       config["mcpServers"] ||= {}

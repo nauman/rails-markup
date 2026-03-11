@@ -76,11 +76,80 @@ module RailsMarkup
       end
     end
 
+    desc "fetch", "Fetch pending annotations from dev or production"
+    method_option :env, type: :string, default: "dev", enum: %w[dev production],
+      desc: "Which environment to fetch from"
+    method_option :url, type: :string, desc: "Override base URL"
+    method_option :token, type: :string, desc: "Override API token"
+    def fetch
+      config = McpConfig.new
+      mcp_env = config.exist? ? config.raw_env : {}
+
+      target = options[:env]
+      base_url = options[:url] || mcp_env[target == "dev" ? "RAILS_MARKUP_DEV_URL" : "RAILS_MARKUP_PROD_URL"]
+      token = options[:token] || mcp_env[target == "dev" ? "RAILS_MARKUP_DEV_TOKEN" : "RAILS_MARKUP_PROD_TOKEN"]
+
+      unless base_url
+        say "No #{target} URL. Set it via:", :red
+        say "  bin/markup configure --#{target.tr('production', 'prod')}-url URL --#{target.tr('production', 'prod')}-token TOKEN"
+        return
+      end
+
+      unless token
+        say "No #{target} token configured.", :red
+        return
+      end
+
+      say "Fetching from #{target}: #{base_url}", :green
+      annotations = fetch_pending(base_url, token)
+
+      if annotations.empty?
+        say "No pending annotations.", :yellow
+        return
+      end
+
+      say "#{annotations.size} pending annotation(s):\n"
+      annotations.each_with_index do |ann, i|
+        page = URI.parse(ann["pageUrl"]).path rescue ann["pageUrl"]
+        say "#{i + 1}. [##{ann["id"]}] #{ann["intent"]} | #{ann["severity"]} | #{page}"
+        say "   #{ann["content"]}"
+        say "   Element: #{ann.dig("target", "selector")}" if ann.dig("target", "selector")
+        say ""
+      end
+    end
+
     def self.exit_on_failure?
       true
     end
 
     private
+
+    def fetch_pending(base_url, token)
+      require "net/http"
+      require "uri"
+      require "json"
+
+      uri = URI.parse("#{base_url}/internal/annotations/pending")
+      req = Net::HTTP::Get.new(uri)
+      req["Authorization"] = "Bearer #{token}"
+      req["Accept"] = "application/json"
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = uri.scheme == "https"
+      http.open_timeout = 10
+      http.read_timeout = 15
+      resp = http.request(req)
+
+      unless resp.is_a?(Net::HTTPSuccess)
+        say "API error: #{resp.code} #{resp.body}", :red
+        return []
+      end
+
+      data = JSON.parse(resp.body)
+      data["annotations"] || []
+    rescue => e
+      say "Connection error: #{e.message}", :red
+      []
+    end
 
     def env_table(env_hash)
       rows = env_hash.map { |k, v| [k, v] }
