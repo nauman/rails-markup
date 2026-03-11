@@ -17,6 +17,12 @@ module RailsMarkup
 
     # POST /feedback/api/sessions/:session_id/annotations
     def create
+      # Dedup: if this localId was already submitted for this page, return existing
+      if (local_id = params.dig(:metadata, :localId))
+        existing = find_by_local_id(local_id, params[:page_url] || request.referer || "/")
+        return render json: existing.as_api_json, status: :ok if existing
+      end
+
       annotation = Annotation.new(annotation_params)
 
       if respond_to?(:current_user, true) && current_user
@@ -68,6 +74,15 @@ module RailsMarkup
 
     def set_annotation
       @annotation = Annotation.find(params[:id])
+    end
+
+    def find_by_local_id(local_id, page_url)
+      scope = Annotation.where(page_url: page_url)
+      if Annotation.connection.adapter_name.downcase.include?("postgres")
+        scope.where("metadata->>'localId' = ?", local_id.to_s).first
+      else
+        scope.where("CAST(json_extract(metadata, '$.localId') AS TEXT) = CAST(? AS TEXT)", local_id).first
+      end
     end
 
     ALLOWED_TARGET_KEYS = %w[selector cssPath nearbyText boundingBox].freeze

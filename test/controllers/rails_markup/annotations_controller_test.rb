@@ -63,6 +63,42 @@ module RailsMarkup
       assert body["errors"].any? { |e| e.include?("Content") }
     end
 
+    test "create deduplicates by localId and page_url" do
+      # First submission — creates
+      assert_difference "Annotation.count", 1 do
+        post session_annotations_path("test-session"),
+          params: { page_url: "/dedup-test", content: "Fix spacing", intent: "fix", severity: "important",
+                    metadata: { localId: 42 } },
+          as: :json
+      end
+      assert_response :created
+      first_id = response.parsed_body["id"]
+
+      # Duplicate submission — returns existing, no new record
+      assert_no_difference "Annotation.count" do
+        post session_annotations_path("test-session"),
+          params: { page_url: "/dedup-test", content: "Fix spacing", intent: "fix", severity: "important",
+                    metadata: { localId: 42 } },
+          as: :json
+      end
+      assert_response :ok
+      assert_equal first_id, response.parsed_body["id"]
+    end
+
+    test "create allows same localId on different pages" do
+      post session_annotations_path("test-session"),
+        params: { page_url: "/page-a", content: "Fix A", metadata: { localId: 1 } },
+        as: :json
+      assert_response :created
+
+      assert_difference "Annotation.count", 1 do
+        post session_annotations_path("test-session"),
+          params: { page_url: "/page-b", content: "Fix B", metadata: { localId: 1 } },
+          as: :json
+      end
+      assert_response :created
+    end
+
     test "create normalizes camelCase selectedText to selected_text" do
       post session_annotations_path("test-session"),
         params: { page_url: "/test", content: "Fix", selectedText: "highlighted text" },
