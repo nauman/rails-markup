@@ -42,6 +42,8 @@
       this._loadFromStorage();
       this._checkHealth();
       this.healthInterval = setInterval(() => this._checkHealth(), 10000);
+      this._boundVisibilityChange = () => this._onVisibilityChange();
+      document.addEventListener("visibilitychange", this._boundVisibilityChange);
       this._renderPins();
       this._updateCount();
     },
@@ -50,6 +52,7 @@
       this._deactivateMode();
       if (this.sseSource) { this.sseSource.close(); this.sseSource = null; }
       if (this.healthInterval) { clearInterval(this.healthInterval); this.healthInterval = null; }
+      if (this._boundVisibilityChange) document.removeEventListener("visibilitychange", this._boundVisibilityChange);
       window.removeEventListener("resize", this._onResize);
       if (this._boundTurboNavigate) document.removeEventListener("turbo:load", this._boundTurboNavigate);
       if (this._boundTurboFrame) document.removeEventListener("turbo:frame-render", this._boundTurboFrame);
@@ -137,16 +140,16 @@
       const accentText = this._accentText();
 
       root.innerHTML = `
-        <button class="rm-fab" id="rm-fab" style="background:${accentBg};color:#fff;" title="Toggle annotation mode">
+        <button class="rm-fab" id="rm-fab" style="background:${accentBg};color:#fff;" title="Toggle annotation mode" aria-label="Toggle annotation mode" aria-expanded="false" aria-controls="rm-panel">
           <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
           <span class="rm-fab-badge" id="rm-fab-badge"></span>
         </button>
-        <button class="rm-panel-toggle" id="rm-panel-toggle" title="View annotations">
+        <button class="rm-panel-toggle" id="rm-panel-toggle" title="View annotations" aria-label="View annotations" aria-controls="rm-panel">
           <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
         </button>
         <div class="rm-toast-container" id="rm-toast-container"></div>
         <div class="rm-pins-container" id="rm-pins-container"></div>
-        <div class="rm-popup" id="rm-popup">
+        <div class="rm-popup" id="rm-popup" role="dialog" aria-label="Add annotation" aria-modal="false">
           <div style="margin-bottom:12px">
             <p class="rm-popup-el" id="rm-popup-el"></p>
             <p class="rm-popup-text" id="rm-popup-text"></p>
@@ -174,14 +177,14 @@
             </button>
           </div>
         </div>
-        <div class="rm-panel" id="rm-panel">
+        <div class="rm-panel" id="rm-panel" role="dialog" aria-label="Annotations panel">
           <div class="rm-panel-header">
             <div style="display:flex;align-items:center;gap:8px">
               <h3>Feedback</h3>
               <span class="rm-panel-count" id="rm-panel-count" style="background:${accentLight};color:${accentText}">0</span>
             </div>
-            <button class="rm-panel-close" id="rm-panel-close">
-              <svg viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
+            <button class="rm-panel-close" id="rm-panel-close" aria-label="Close annotations panel">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18L18 6M6 6l12 12"/></svg>
             </button>
           </div>
           <div class="rm-filter-chips" id="rm-filter-chips">
@@ -214,6 +217,27 @@
       document.getElementById("rm-filter-chips").addEventListener("click", (e) => {
         const chip = e.target.closest("[data-filter]");
         if (chip) self._filterAnnotations(chip.dataset.filter);
+      });
+
+      // Event delegation for cards (click scrolls to element)
+      document.getElementById("rm-panel-list").addEventListener("click", (e) => {
+        const card = e.target.closest("[data-card-id]");
+        if (!card) return;
+        const id = parseInt(card.dataset.cardId, 10);
+        const annotation = self.annotations.find(a => a.id === id);
+        if (!annotation) return;
+        const el = self._findElement(annotation);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+
+      // Event delegation for pins (click opens panel + scrolls to card)
+      document.getElementById("rm-pins-container").addEventListener("click", (e) => {
+        const pin = e.target.closest("[data-pin-id]");
+        if (!pin) return;
+        const panel = document.getElementById("rm-panel");
+        if (panel.style.display !== "flex") self.togglePanel();
+        const card = document.querySelector('[data-card-id="' + pin.dataset.pinId + '"]');
+        if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
       });
 
       this._boundMouseMove = (e) => self._handleMouseMove(e);
@@ -321,10 +345,13 @@
 
     togglePanel() {
       const panel = document.getElementById("rm-panel");
+      const fab = document.getElementById("rm-fab");
       if (panel.style.display === "flex") {
         panel.style.display = "none";
+        if (fab) fab.setAttribute("aria-expanded", "false");
       } else {
         panel.style.display = "flex";
+        if (fab) fab.setAttribute("aria-expanded", "true");
       }
     },
 
@@ -566,11 +593,6 @@
         ${threadHtml}
       `;
 
-      card.addEventListener("click", () => {
-        const el = this._findElement(annotation);
-        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-      });
-
       list.appendChild(card);
     },
 
@@ -613,12 +635,6 @@
       if (isResolved) pin.style.opacity = "0.6";
       pin.textContent = annotation.id;
       pin.title = "#" + annotation.id + ": " + annotation.comment.slice(0, 50);
-      pin.addEventListener("click", () => {
-        const panel = document.getElementById("rm-panel");
-        if (panel.style.display !== "flex") this.togglePanel();
-        const card = document.querySelector('[data-card-id="' + annotation.id + '"]');
-        if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
-      });
       document.getElementById("rm-pins-container").appendChild(pin);
     },
 
@@ -709,6 +725,19 @@
     },
 
     // ---- Server sync ----
+
+    _onVisibilityChange() {
+      if (document.hidden) {
+        // Tab hidden — pause health checks to save resources
+        if (this.healthInterval) { clearInterval(this.healthInterval); this.healthInterval = null; }
+      } else {
+        // Tab visible — resume health checks immediately
+        if (!this.healthInterval) {
+          this._checkHealth();
+          this.healthInterval = setInterval(() => this._checkHealth(), 10000);
+        }
+      }
+    },
 
     async _checkHealth() {
       try {
