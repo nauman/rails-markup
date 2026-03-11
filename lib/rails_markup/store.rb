@@ -170,6 +170,7 @@ module RailsMarkup
         severity: ann.severity,
         status: ann.status,
         selectedText: ann.selected_text,
+        authorName: ann.metadata&.dig("author"),
         metadata: ann.metadata,
         createdAt: ann.created_at,
         thread: ann.thread

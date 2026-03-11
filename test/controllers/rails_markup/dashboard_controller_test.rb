@@ -37,6 +37,18 @@ module RailsMarkup
       assert_select "turbo-frame#detail-panel"
     end
 
+    test "index with search query filters results" do
+      get rails_markup.root_path(status: "all", q: "padding")
+      assert_response :success
+    end
+
+    test "index with author filter" do
+      Annotation.create!(content: "Test", page_url: "/t", metadata: { "author" => "TestAuthor" })
+
+      get rails_markup.root_path(status: "all", author: "TestAuthor")
+      assert_response :success
+    end
+
     # --- Show ---
 
     test "show displays annotation" do
@@ -52,6 +64,14 @@ module RailsMarkup
     test "show renders within detail-panel turbo frame" do
       get rails_markup.annotation_path(annotations(:pending_fix))
       assert_select "turbo-frame#detail-panel"
+    end
+
+    # --- Board ---
+
+    test "board renders all columns" do
+      get rails_markup.board_path
+      assert_response :success
+      assert_select ".rm-board-column", 4
     end
 
     # --- Update actions ---
@@ -109,6 +129,27 @@ module RailsMarkup
       assert_equal "agent", annotation.reload.thread.last["role"]
     end
 
+    test "transition updates status via JSON" do
+      annotation = annotations(:pending_fix)
+
+      patch rails_markup.annotation_path(annotation),
+        params: { action_type: "transition", status: "acknowledged" },
+        as: :json
+
+      assert_response :ok
+      assert_equal "acknowledged", annotation.reload.status
+    end
+
+    test "transition with invalid status returns error" do
+      annotation = annotations(:pending_fix)
+
+      patch rails_markup.annotation_path(annotation),
+        params: { action_type: "transition", status: "invalid" },
+        as: :json
+
+      assert_response :unprocessable_entity
+    end
+
     # --- Dismiss all ---
 
     test "dismiss_all dismisses pending annotations" do
@@ -118,6 +159,35 @@ module RailsMarkup
 
       assert_redirected_to rails_markup.root_path(status: "dismissed")
       assert_equal "dismissed", annotations(:pending_fix).reload.status
+    end
+
+    # --- Export ---
+
+    test "export_csv returns CSV file" do
+      get rails_markup.export_csv_path
+      assert_response :success
+      assert_equal "text/csv", response.media_type
+      assert response.body.include?("id,status,intent")
+    end
+
+    test "export_json returns JSON file" do
+      get rails_markup.export_json_path
+      assert_response :success
+      assert_equal "application/json", response.media_type
+      data = JSON.parse(response.body)
+      assert data.is_a?(Array)
+      assert data.first.key?("id")
+    end
+
+    test "export_csv respects status filter" do
+      get rails_markup.export_csv_path(status: "pending")
+      assert_response :success
+      # CSV should only contain pending annotations
+      lines = response.body.split("\n")
+      data_lines = lines[1..] # skip header
+      data_lines.each do |line|
+        assert_includes line, "pending"
+      end
     end
   end
 end

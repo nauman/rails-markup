@@ -159,6 +159,21 @@ class StoreTest < Minitest::Test
     assert_equal "pending", data[:status]
   end
 
+  def test_serialize_annotation_includes_author_name
+    session = @store.create_session(url: "http://example.com")
+    ann = @store.create_annotation(session_id: session.id, target: "div", content: "test",
+                                   metadata: { "author" => "Alice" })
+    data = @store.serialize_annotation(ann)
+    assert_equal "Alice", data[:authorName]
+  end
+
+  def test_serialize_annotation_author_name_nil_when_absent
+    session = @store.create_session(url: "http://example.com")
+    ann = @store.create_annotation(session_id: session.id, target: "div", content: "test")
+    data = @store.serialize_annotation(ann)
+    assert_nil data[:authorName]
+  end
+
   # --- Subscriptions ---
 
   def test_subscribe_receives_annotation_events

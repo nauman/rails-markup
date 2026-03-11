@@ -5,6 +5,9 @@ RailsMarkup::Engine.routes.draw do
   root to: "dashboard#index"
   resources :annotations, only: [:show, :update], controller: "dashboard", constraints: { id: /\d+/ }
   post "dismiss_all", to: "dashboard#dismiss_all"
+  get "board", to: "dashboard#board"
+  get "export.csv", to: "dashboard#export_csv", as: :export_csv
+  get "export.json", to: "dashboard#export_json", as: :export_json
 
   # Toolbar API (same-origin, used by browser toolbar)
   scope :api, defaults: { format: :json } do

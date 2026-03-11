@@ -8,7 +8,7 @@
   <% if total_pages > 1 %>
     <div class="rm-filters" style="margin-top: 16px; justify-content: center;">
       <% (1..total_pages).each do |page| %>
-        <a href="<%= rails_markup.root_path(status: @current_status, page_url: @current_page_url, page: page) %>"
+        <a href="<%= rails_markup.root_path(status: @current_status, page_url: @current_page_url, q: @current_query, author: @current_author, page: page) %>"
            class="rm-pill <%= 'rm-pill-active' if @current_page == page %>">
           <%= page %>
         </a>
@@ -18,6 +18,18 @@
 <% else %>
   <div class="rm-empty">
     <div class="rm-empty-icon">&#9670;</div>
-    <div class="rm-empty-text">No annotations yet.<br>Use the toolbar to start annotating.</div>
+    <div class="rm-empty-text">
+      <% if @current_query.present? %>
+        No results for &ldquo;<%= @current_query %>&rdquo;.
+        <a href="<%= rails_markup.root_path(status: @current_status, page_url: @current_page_url, author: @current_author) %>">Clear search</a>
+      <% elsif @current_author.present? %>
+        No annotations by <%= @current_author %>.
+        <a href="<%= rails_markup.root_path(status: @current_status, page_url: @current_page_url) %>">Clear filter</a>
+      <% elsif @current_status != "all" %>
+        No <%= @current_status %> annotations.
+      <% else %>
+        No annotations yet.<br>Use the toolbar to start annotating.
+      <% end %>
+    </div>
   </div>
 <% end %>

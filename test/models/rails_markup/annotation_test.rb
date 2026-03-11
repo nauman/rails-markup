@@ -167,6 +167,58 @@ module RailsMarkup
       assert_not_includes results, annotations(:resolved_fix)
     end
 
+    # --- Search scope ---
+
+    test "search scope finds by content" do
+      results = Annotation.search("padding")
+      assert_includes results, annotations(:pending_fix)
+      assert_not_includes results, annotations(:dismissed_question)
+    end
+
+    test "search scope finds by selected_text" do
+      results = Annotation.search("Get Started")
+      assert_includes results, annotations(:pending_fix)
+    end
+
+    test "search scope returns empty for no match" do
+      results = Annotation.search("zzz_no_match_zzz")
+      assert_empty results
+    end
+
+    # --- Author ---
+
+    test "author_name reads from metadata" do
+      annotation = Annotation.new(metadata: { "author" => "Alice" })
+      assert_equal "Alice", annotation.author_name
+    end
+
+    test "author_name returns nil when not set" do
+      annotation = Annotation.new(metadata: {})
+      assert_nil annotation.author_name
+    end
+
+    test "by_author scope filters by author in metadata" do
+      ann = Annotation.create!(content: "Test", page_url: "/test", metadata: { "author" => "TestUser" })
+      results = Annotation.by_author("TestUser")
+      assert_includes results, ann
+      assert_not_includes results, annotations(:pending_fix)
+    ensure
+      ann&.destroy
+    end
+
+    test "distinct_authors returns sorted unique authors" do
+      ann1 = Annotation.create!(content: "A", page_url: "/t", metadata: { "author" => "Zara" })
+      ann2 = Annotation.create!(content: "B", page_url: "/t", metadata: { "author" => "Alice" })
+      ann3 = Annotation.create!(content: "C", page_url: "/t", metadata: { "author" => "Zara" }) # duplicate
+
+      authors = Annotation.distinct_authors
+      assert_includes authors, "Alice"
+      assert_includes authors, "Zara"
+      assert_equal authors, authors.sort
+    ensure
+      [ann1, ann2, ann3].compact.each(&:destroy)
+    end
+
     # --- Status transitions ---
 
     test "acknowledge! transitions to acknowledged" do
@@ -293,6 +345,17 @@ module RailsMarkup
       assert json[:target].is_a?(Hash)
       assert json[:metadata].is_a?(Hash)
       assert json[:thread].is_a?(Array)
+    end
+
+    test "as_api_json includes authorName" do
+      annotation = Annotation.new(content: "Test", page_url: "/test", metadata: { "author" => "Alice" })
+      json = annotation.as_api_json
+      assert_equal "Alice", json[:authorName]
+    end
+
+    test "as_api_json authorName is nil when no author" do
+      json = annotations(:pending_fix).as_api_json
+      assert_nil json[:authorName]
     end
 
     test "as_api_json includes thread entries for resolved annotation" do

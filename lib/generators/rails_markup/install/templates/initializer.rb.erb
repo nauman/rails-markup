@@ -20,4 +20,19 @@ RailsMarkup.configure do |config|
 
   # "Back to app" link in the dashboard header.
   # config.return_url = "/admin"
+
+  # How to resolve the author's display name from current_user.
+  # Symbol: calls the method on the user — e.g. :name, :email, :display_name
+  # Proc: receives user, returns string — e.g. ->(u) { "#{u.first_name} #{u.last_name}" }
+  # Default: :email
+  # config.author_name_method = :name
+
+  # Callback fired after each annotation is created.
+  # Use for Slack, email, or webhook notifications.
+  # config.on_create_callback = ->(annotation) {
+  #   SlackNotifier.notify("New feedback on #{annotation.page_url}: #{annotation.content}")
+  # }
+
+  # Enable element screenshot capture in the toolbar (default: true)
+  # config.enable_screenshots = true
 end

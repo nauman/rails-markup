@@ -33,6 +33,21 @@ module RailsMarkup
     # Number of annotations per page on the dashboard.
     attr_reader :per_page
 
+    # Method name (Symbol) or Proc to resolve the author's display name from the current_user.
+    # Symbol: calls user.public_send(method_name) — e.g. :name, :email, :display_name
+    # Proc: receives user, returns string — e.g. ->(u) { u.full_name }
+    # Default: :email
+    attr_accessor :author_name_method
+
+    # Proc called after an annotation is created. Receives the annotation record.
+    # Use for email/Slack/webhook notifications.
+    # Default: nil (no callback)
+    attr_accessor :on_create_callback
+
+    # Enable element screenshot capture in the toolbar.
+    # Default: true
+    attr_accessor :enable_screenshots
+
     def initialize
       @base_controller_class = "RailsMarkup::ApplicationController"
       @api_token = nil
@@ -41,6 +56,21 @@ module RailsMarkup
       @toolbar_accent = "indigo"
       @return_url = nil
       @dashboard_layout = "rails_markup/application"
+      @author_name_method = :email
+      @on_create_callback = nil
+      @enable_screenshots = true
+    end
+
+    def resolve_author_name(user)
+      return nil unless user
+
+      case author_name_method
+      when Symbol then user.respond_to?(author_name_method) ? user.public_send(author_name_method) : nil
+      when Proc   then author_name_method.call(user)
+      end
+    rescue => e
+      Rails.logger.warn("[rails-markup] author_name_method error: #{e.message}") if defined?(Rails)
+      nil
     end
 
     def per_page=(value)

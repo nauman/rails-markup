@@ -38,12 +38,22 @@
       <dd><%= @annotation.target["boundingBox"].values_at("x", "y", "width", "height").compact.join(" \u00D7 ") %></dd>
     <% end %>
 
+    <% if @annotation.author_name.present? %>
+      <dt>Author</dt>
+      <dd><%= @annotation.author_name %></dd>
+    <% end %>
+
     <dt>Created</dt>
-    <dd><%= @annotation.created_at.strftime("%B %d, %Y at %H:%M:%S") %></dd>
+    <dd><span title="<%= @annotation.created_at.strftime("%B %d, %Y at %H:%M:%S") %>"><%= time_ago_in_words(@annotation.created_at) %> ago</span></dd>
 
     <% if @annotation.updated_at != @annotation.created_at %>
       <dt>Updated</dt>
-      <dd><%= @annotation.updated_at.strftime("%B %d, %Y at %H:%M:%S") %></dd>
+      <dd><span title="<%= @annotation.updated_at.strftime("%B %d, %Y at %H:%M:%S") %>"><%= time_ago_in_words(@annotation.updated_at) %> ago</span></dd>
+    <% end %>
+
+    <% if @annotation.metadata&.dig("screenshot").present? %>
+      <dt>Screenshot</dt>
+      <dd><img src="<%= @annotation.metadata["screenshot"] %>" style="max-width:100%;border:1px solid #e5e7eb;border-radius:8px;" alt="Element screenshot"></dd>
     <% end %>
   </dl>
 

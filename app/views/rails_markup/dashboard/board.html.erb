@@ -1,0 +1,115 @@
+<% content_for(:title) { "Board" } %>
+<% content_for(:page_title) { "Annotations Board" } %>
+
+<%= render "styles" %>
+
+<%# View toggle %>
+<div class="rm-filters">
+  <a href="<%= rails_markup.root_path %>" class="rm-pill">List</a>
+  <a href="<%= rails_markup.board_path %>" class="rm-pill rm-pill-active">Board</a>
+</div>
+
+<div class="rm-board">
+  <% column_config = {
+    pending:      { label: "Pending",      color: "#f59e0b", bg: "#fffbeb", border: "#fde68a" },
+    acknowledged: { label: "Acknowledged", color: "#3b82f6", bg: "#eff6ff", border: "#bfdbfe" },
+    resolved:     { label: "Resolved",     color: "#10b981", bg: "#ecfdf5", border: "#a7f3d0" },
+    dismissed:    { label: "Dismissed",    color: "#9ca3af", bg: "#f9fafb", border: "#e5e7eb" }
+  } %>
+
+  <% column_config.each do |status, config| %>
+    <div class="rm-board-column" data-status="<%= status %>"
+         style="border-top: 3px solid <%= config[:color] %>;">
+      <div class="rm-board-column-header" style="background: <%= config[:bg] %>; color: <%= config[:color] %>;">
+        <span><%= config[:label] %></span>
+        <span style="font-size:12px;font-weight:400;"><%= @columns[status].size %></span>
+      </div>
+      <div class="rm-board-cards">
+        <% @columns[status].each do |annotation| %>
+          <div class="rm-board-card" draggable="true" data-annotation-id="<%= annotation.id %>">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+              <span class="rm-badge rm-intent-<%= annotation.intent %>" style="font-size:10px;"><%= annotation.intent %></span>
+              <% if annotation.severity != "suggestion" %>
+                <span class="rm-badge rm-severity-<%= annotation.severity %>" style="font-size:10px;"><%= annotation.severity %></span>
+              <% end %>
+              <% if annotation.author_name.present? %>
+                <span style="font-size:10px;color:#9ca3af;margin-left:auto;"><%= annotation.author_name %></span>
+              <% end %>
+            </div>
+            <div style="font-size:13px;line-height:1.5;color:#374151;"><%= truncate(annotation.content, length: 120) %></div>
+            <div style="margin-top:6px;font-size:10px;color:#d1d5db;">
+              <code style="font-size:10px;"><%= truncate(annotation.page_url, length: 30) %></code>
+              &middot;
+              <span title="<%= annotation.created_at.strftime("%B %d, %Y at %H:%M") %>"><%= time_ago_in_words(annotation.created_at) %></span>
+            </div>
+          </div>
+        <% end %>
+        <% if @columns[status].empty? %>
+          <div style="text-align:center;padding:24px 8px;color:#d1d5db;font-size:12px;">No items</div>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>
+
+<script>
+(function() {
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+
+  document.querySelectorAll('.rm-board-card').forEach(card => {
+    card.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', card.dataset.annotationId);
+      e.dataTransfer.effectAllowed = 'move';
+      card.style.opacity = '0.5';
+    });
+    card.addEventListener('dragend', () => { card.style.opacity = '1'; });
+  });
+
+  document.querySelectorAll('.rm-board-column').forEach(col => {
+    col.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      col.classList.add('rm-drag-over');
+    });
+    col.addEventListener('dragleave', (e) => {
+      if (!col.contains(e.relatedTarget)) col.classList.remove('rm-drag-over');
+    });
+    col.addEventListener('drop', (e) => {
+      e.preventDefault();
+      col.classList.remove('rm-drag-over');
+      const id = e.dataTransfer.getData('text/plain');
+      const newStatus = col.dataset.status;
+      const card = document.querySelector('[data-annotation-id="' + id + '"]');
+      if (!card || card.closest('[data-status]').dataset.status === newStatus) return;
+
+      // Move card in DOM
+      col.querySelector('.rm-board-cards').appendChild(card);
+
+      // Update count badges
+      updateColumnCounts();
+
+      // PATCH to server
+      const basePath = window.location.pathname.replace(/\/board\/?$/, '');
+      fetch(basePath + '/annotations/' + id, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken || ''
+        },
+        body: JSON.stringify({ action_type: 'transition', status: newStatus })
+      }).catch(() => {
+        // Revert on error — reload to get correct state
+        window.location.reload();
+      });
+    });
+  });
+
+  function updateColumnCounts() {
+    document.querySelectorAll('.rm-board-column').forEach(col => {
+      const count = col.querySelectorAll('.rm-board-card').length;
+      const countEl = col.querySelector('.rm-board-column-header span:last-child');
+      if (countEl) countEl.textContent = count;
+    });
+  }
+})();
+</script>

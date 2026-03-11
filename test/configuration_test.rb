@@ -60,4 +60,71 @@ class ConfigurationTest < ActiveSupport::TestCase
     config.return_url = "/admin"
     assert_equal "/admin", config.return_url
   end
+
+  # --- Author name method ---
+
+  test "defaults author_name_method to :email" do
+    config = RailsMarkup::Configuration.new
+    assert_equal :email, config.author_name_method
+  end
+
+  test "resolve_author_name with symbol method" do
+    config = RailsMarkup::Configuration.new
+    config.author_name_method = :name
+    user = Struct.new(:name).new("Alice")
+    assert_equal "Alice", config.resolve_author_name(user)
+  end
+
+  test "resolve_author_name with proc" do
+    config = RailsMarkup::Configuration.new
+    config.author_name_method = ->(u) { "#{u.first} #{u.last}" }
+    user = Struct.new(:first, :last).new("Alice", "Smith")
+    assert_equal "Alice Smith", config.resolve_author_name(user)
+  end
+
+  test "resolve_author_name returns nil for nil user" do
+    config = RailsMarkup::Configuration.new
+    assert_nil config.resolve_author_name(nil)
+  end
+
+  test "resolve_author_name returns nil when method not found" do
+    config = RailsMarkup::Configuration.new
+    config.author_name_method = :nonexistent_method
+    user = Struct.new(:email).new("test@example.com")
+    assert_nil config.resolve_author_name(user)
+  end
+
+  test "resolve_author_name rescues errors from proc" do
+    config = RailsMarkup::Configuration.new
+    config.author_name_method = ->(_u) { raise "boom" }
+    user = Struct.new(:email).new("test@example.com")
+    assert_nil config.resolve_author_name(user)
+  end
+
+  # --- Notification hook ---
+
+  test "defaults on_create_callback to nil" do
+    config = RailsMarkup::Configuration.new
+    assert_nil config.on_create_callback
+  end
+
+  test "on_create_callback accepts proc" do
+    config = RailsMarkup::Configuration.new
+    callback = ->(ann) { ann }
+    config.on_create_callback = callback
+    assert_equal callback, config.on_create_callback
+  end
+
+  # --- Screenshots ---
+
+  test "defaults enable_screenshots to true" do
+    config = RailsMarkup::Configuration.new
+    assert config.enable_screenshots
+  end
+
+  test "enable_screenshots can be disabled" do
+    config = RailsMarkup::Configuration.new
+    config.enable_screenshots = false
+    assert_not config.enable_screenshots
+  end
 end

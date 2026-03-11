@@ -9,7 +9,7 @@
     ]
   %>
   <% statuses.each do |value, label| %>
-    <a href="<%= rails_markup.root_path(status: value, page_url: @current_page_url) %>"
+    <a href="<%= rails_markup.root_path(status: value, page_url: @current_page_url, q: @current_query, author: @current_author) %>"
        class="rm-pill <%= 'rm-pill-active' if @current_status == value %>">
       <%= label %>
     </a>
@@ -21,15 +21,55 @@
     <% end %>
   <% end %>
 
+  <div style="margin-left: auto; display: flex; gap: 4px; align-items: center;">
+    <a href="<%= rails_markup.root_path(status: @current_status, page_url: @current_page_url, q: @current_query, author: @current_author) %>"
+       class="rm-pill <%= 'rm-pill-active' unless action_name == 'board' %>">List</a>
+    <a href="<%= rails_markup.board_path %>" class="rm-pill <%= 'rm-pill-active' if action_name == 'board' %>">Board</a>
+  </div>
+</div>
+
+<div class="rm-filters">
+  <%# Search %>
+  <form action="<%= rails_markup.root_path %>" method="get" style="display:flex;gap:6px;align-items:center;">
+    <input type="text" name="q" value="<%= @current_query %>" placeholder="Search annotations..." class="rm-select" style="min-width:180px;">
+    <input type="hidden" name="status" value="<%= @current_status %>">
+    <input type="hidden" name="page_url" value="<%= @current_page_url %>">
+    <input type="hidden" name="author" value="<%= @current_author %>">
+    <button type="submit" class="rm-pill">Search</button>
+    <% if @current_query.present? %>
+      <a href="<%= rails_markup.root_path(status: @current_status, page_url: @current_page_url, author: @current_author) %>" class="rm-pill" style="color:#ef4444;">Clear</a>
+    <% end %>
+  </form>
+
+  <%# Page URL filter %>
   <% if @page_urls.any? %>
     <select class="rm-select" onchange="document.getElementById('annotations-content').src=this.value">
-      <option value="<%= rails_markup.root_path(status: @current_status == 'all' ? nil : @current_status) %>">All pages</option>
+      <option value="<%= rails_markup.root_path(status: @current_status == 'all' ? nil : @current_status, q: @current_query, author: @current_author) %>">All pages</option>
       <% @page_urls.each do |url| %>
-        <option value="<%= rails_markup.root_path(status: @current_status == 'all' ? nil : @current_status, page_url: url) %>"
+        <option value="<%= rails_markup.root_path(status: @current_status == 'all' ? nil : @current_status, page_url: url, q: @current_query, author: @current_author) %>"
                 <%= 'selected' if @current_page_url == url %>>
           <%= truncate(url, length: 60) %>
         </option>
       <% end %>
     </select>
   <% end %>
+
+  <%# Author filter %>
+  <% if @authors.any? %>
+    <select class="rm-select" onchange="window.location=this.value">
+      <option value="<%= rails_markup.root_path(status: @current_status, page_url: @current_page_url, q: @current_query) %>">All authors</option>
+      <% @authors.each do |author| %>
+        <option value="<%= rails_markup.root_path(status: @current_status, page_url: @current_page_url, q: @current_query, author: author) %>"
+                <%= 'selected' if @current_author == author %>>
+          <%= author %>
+        </option>
+      <% end %>
+    </select>
+  <% end %>
+
+  <%# Export %>
+  <div style="margin-left:auto;display:flex;gap:4px;">
+    <a href="<%= rails_markup.export_csv_path(status: @current_status, page_url: @current_page_url, q: @current_query, author: @current_author) %>" class="rm-pill">CSV</a>
+    <a href="<%= rails_markup.export_json_path(status: @current_status, page_url: @current_page_url, q: @current_query, author: @current_author) %>" class="rm-pill">JSON</a>
+  </div>
 </div>

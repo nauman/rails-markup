@@ -13,7 +13,10 @@
     <div class="rm-card-content"><%= truncate(annotation.content, length: 200) %></div>
     <div class="rm-card-meta">
       <code><%= truncate(annotation.page_url, length: 50) %></code>
-      <span><%= annotation.created_at.strftime("%b %d, %Y %H:%M") %></span>
+      <% if annotation.author_name.present? %>
+        <span class="rm-author"><%= annotation.author_name %></span>
+      <% end %>
+      <span title="<%= annotation.created_at.strftime("%B %d, %Y at %H:%M") %>"><%= time_ago_in_words(annotation.created_at) %> ago</span>
       <% if annotation.thread.any? %>
         <span><%= annotation.thread.size %> replies</span>
       <% end %>

@@ -251,6 +251,7 @@ module RailsMarkup
       say ""
       say "  #{ann["content"]}"
       say ""
+      say "  Author:    #{ann["authorName"]}" if ann["authorName"]
       say "  CSS path:  #{target["cssPath"]}" if target["cssPath"]
       say "  Selector:  #{target["selector"]}" if target["selector"]
       say "  Text near: \"#{nearby}\"" if nearby

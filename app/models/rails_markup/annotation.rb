@@ -32,6 +32,30 @@ module RailsMarkup
     scope :for_page, ->(url) { where(page_url: url) }
     scope :recent, -> { order(created_at: :desc) }
 
+    scope :search, ->(query) {
+      where("content LIKE :q OR selected_text LIKE :q", q: "%#{sanitize_sql_like(query)}%")
+    }
+
+    scope :by_author, ->(name) {
+      if connection.adapter_name.downcase.include?("postgres")
+        where("metadata->>'author' = ?", name)
+      else
+        where("json_extract(metadata, '$.author') = ?", name)
+      end
+    }
+
+    def self.distinct_authors
+      if connection.adapter_name.downcase.include?("postgres")
+        where("metadata->>'author' IS NOT NULL").distinct.pluck(Arel.sql("metadata->>'author'")).compact.sort
+      else
+        all.filter_map(&:author_name).uniq.sort
+      end
+    end
+
+    def author_name
+      metadata&.dig("author")
+    end
+
     def acknowledge!
       raise "Cannot acknowledge a #{status} annotation" unless status == "pending"
 
@@ -65,6 +89,7 @@ module RailsMarkup
       {
         id: id.to_s,
         userId: user_id,
+        authorName: author_name,
         content: content,
         intent: intent,
         severity: severity,

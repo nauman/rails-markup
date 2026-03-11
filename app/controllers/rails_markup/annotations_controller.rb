@@ -18,9 +18,15 @@ module RailsMarkup
     # POST /feedback/api/sessions/:session_id/annotations
     def create
       annotation = Annotation.new(annotation_params)
-      annotation.user_id = current_user&.id if respond_to?(:current_user, true)
+
+      if respond_to?(:current_user, true) && current_user
+        annotation.user_id = current_user.id
+        author = RailsMarkup.config.resolve_author_name(current_user)
+        annotation.metadata = (annotation.metadata || {}).merge("author" => author) if author
+      end
 
       if annotation.save
+        fire_create_callback(annotation)
         render json: annotation.as_api_json, status: :created
       else
         render json: { errors: annotation.errors.full_messages }, status: :unprocessable_entity
@@ -65,7 +71,16 @@ module RailsMarkup
     end
 
     ALLOWED_TARGET_KEYS = %w[selector cssPath nearbyText boundingBox].freeze
-    ALLOWED_METADATA_KEYS = %w[tool url localId sessionId].freeze
+    ALLOWED_METADATA_KEYS = %w[tool url localId sessionId author screenshot].freeze
+
+    def fire_create_callback(annotation)
+      callback = RailsMarkup.config.on_create_callback
+      return unless callback.respond_to?(:call)
+
+      callback.call(annotation)
+    rescue => e
+      Rails.logger.error("[rails-markup] on_create_callback error: #{e.message}")
+    end
 
     def annotation_params
       permitted = params.permit(:page_url, :content, :intent, :severity, :selected_text, :selectedText, target: {}, metadata: {})
