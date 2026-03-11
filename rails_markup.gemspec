@@ -37,4 +37,16 @@ Gem::Specification.new do |spec|
   spec.metadata["homepage_uri"]    = spec.homepage
   spec.metadata["source_code_uri"] = spec.homepage
   spec.metadata["changelog_uri"]   = "#{spec.homepage}/blob/main/CHANGELOG.md"
+
+  spec.post_install_message = <<~MSG
+    Rails Markup installed! Run the generator to set up:
+
+      rails generate rails_markup:install
+      rails db:migrate
+
+    Options:
+      --mount-path=/admin/annotations  (engine route)
+      --base-controller=AdminController (auth parent class)
+      --layout=application             (toolbar injection)
+  MSG
 end
