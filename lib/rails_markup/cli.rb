@@ -135,6 +135,11 @@ module RailsMarkup
       end
     end
 
+    desc "production", "Fetch pending annotations from production"
+    def production
+      invoke :fetch, [], env: "production"
+    end
+
     desc "setup-production", "Generate a token and configure production access"
     method_option :url, type: :string, desc: "Production URL (e.g. https://yourapp.com)"
     def setup_production
