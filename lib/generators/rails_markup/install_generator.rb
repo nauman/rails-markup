@@ -66,6 +66,18 @@ module RailsMarkup
         chmod "bin/markup", 0o755
       end
 
+      def configure_mcp
+        require_relative "../../rails_markup/mcp_config"
+        config = RailsMarkup::McpConfig.new(dir: destination_root)
+        dev_url = detect_dev_url
+        env_updates = {
+          "RAILS_MARKUP_DEV_URL" => dev_url,
+          "RAILS_MARKUP_MOUNT_PATH" => options[:mount_path]
+        }
+        config.update_env(env_updates)
+        say_status :create, ".mcp.json (dev URL: #{dev_url})", :green
+      end
+
       def show_post_install
         say ""
         say "Rails Markup installed successfully!", :green
@@ -75,11 +87,18 @@ module RailsMarkup
         say "  - config/initializers/rails_markup.rb"
         say "  - app/controllers/rails_markup_auth_controller.rb"
         say "  - bin/markup"
+        say "  - .mcp.json (MCP config for AI agents)"
         say ""
         say "Next steps:"
         say "  1. Run migrations:  rails db:migrate"
         say "  2. Visit dashboard: #{options[:mount_path]}"
         say "  3. Configure auth in config/initializers/rails_markup.rb"
+        say ""
+        say "CLI commands:"
+        say "  bin/markup fetch              # See pending annotations"
+        say "  bin/markup fetch --env=production  # From production"
+        say "  bin/markup configure --prod-url=URL --prod-token=TOKEN"
+        say "  bin/markup status             # Show current config"
         say ""
       end
 
@@ -87,6 +106,22 @@ module RailsMarkup
 
       def migration_version
         "[#{ActiveRecord::Migration.current_version}]"
+      end
+
+      def detect_dev_url
+        # Try to read bind address and port from Procfile.dev
+        procfile = File.join(destination_root, "Procfile.dev")
+        if File.exist?(procfile)
+          content = File.read(procfile)
+          if content =~ /-b\s+([\d.]+)\s+-p\s+(\d+)/
+            return "http://#{$1}:#{$2}"
+          end
+          if content =~ /-p\s+(\d+)/
+            return "http://localhost:#{$1}"
+          end
+        end
+
+        "http://localhost:3000"
       end
     end
   end

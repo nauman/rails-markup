@@ -48,6 +48,26 @@ module RailsMarkup
         end
       end
 
+      def remove_mcp_config
+        mcp_path = File.join(destination_root, ".mcp.json")
+        return unless File.exist?(mcp_path)
+
+        config = JSON.parse(File.read(mcp_path))
+        server = config.dig("mcpServers", "rails-markup")
+        return unless server
+
+        config["mcpServers"].delete("rails-markup")
+
+        if config["mcpServers"].empty?
+          remove_file ".mcp.json"
+        else
+          File.write(mcp_path, JSON.pretty_generate(config) + "\n")
+          say_status :remove, "rails-markup entry from .mcp.json", :green
+        end
+      rescue JSON::ParserError
+        say_status :skip, ".mcp.json has invalid JSON — leaving in place", :yellow
+      end
+
       def remove_bin_wrapper
         path = "bin/markup"
         full_path = File.join(destination_root, path)
