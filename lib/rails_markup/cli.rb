@@ -224,8 +224,8 @@ module RailsMarkup
     def annotation_table(annotations)
       rows = annotations.map do |ann|
         page = URI.parse(ann["pageUrl"]).path rescue ann["pageUrl"]
-        content = ann["content"].to_s.slice(0, 50)
-        content += "..." if ann["content"].to_s.length > 50
+        page = truncate(page, 25)
+        content = truncate(ann["content"].to_s, 40)
         ["##{ann["id"]}", ann["intent"], ann["severity"], page, content]
       end
 
@@ -279,6 +279,12 @@ module RailsMarkup
       title = LABEL_STYLE.render(" Rails Markup ")
       path = HINT_STYLE.render(".mcp.json")
       "#{title} #{path}\n\n#{table}"
+    end
+
+    def truncate(str, limit)
+      return str if str.length <= limit
+
+      "#{str[0, limit - 3]}..."
     end
   end
 end
