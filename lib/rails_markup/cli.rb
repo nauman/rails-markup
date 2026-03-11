@@ -2,6 +2,7 @@
 
 require "thor"
 require "lipgloss"
+require "set"
 require_relative "../rails_markup"
 require_relative "mcp_config"
 
@@ -95,6 +96,67 @@ module RailsMarkup
     end
 
     # ── Unified commands (match MCP tool verbs) ──────────────
+
+    desc "sessions", "List active annotation sessions (MCP only)"
+    def sessions
+      say "Sessions are only available via MCP tools (in-memory store).", :yellow
+      say ""
+      say "  Use the rails_markup_sessions MCP tool in your AI editor."
+      say "  The CLI talks to the Rails API which has database-backed annotations,"
+      say "  not session-based ones."
+      say ""
+      say "  To view pending annotations: bin/markup pending"
+    end
+
+    desc "session ID", "Get a session with annotations (MCP only)"
+    def session(id = nil)
+      say "Sessions are only available via MCP tools (in-memory store).", :yellow
+      say ""
+      say "  Use the rails_markup_session MCP tool in your AI editor."
+      say ""
+      say "  To view pending annotations: bin/markup pending"
+    end
+
+    desc "watch", "Watch for new annotations (polls pending)"
+    method_option :production, type: :boolean, default: false, desc: "Watch production"
+    method_option :url, type: :string, desc: "Override base URL"
+    method_option :token, type: :string, desc: "Override API token"
+    method_option :mount_path, type: :string, desc: "Engine mount path"
+    method_option :interval, type: :numeric, default: 5, desc: "Poll interval in seconds"
+    def watch
+      env = resolve_env(options[:production])
+      return unless env
+
+      env_label = options[:production] ? "Production" : "Development"
+      interval = [options[:interval], 1].max
+
+      $stdout.puts ""
+      $stdout.puts "#{LABEL_STYLE.render(" Watching #{env_label} ")} #{HINT_STYLE.render(env[:base_url])}"
+      $stdout.puts "#{HINT_STYLE.render("  Polling every #{interval}s. Press Ctrl+C to stop.")}"
+      $stdout.puts ""
+
+      seen_ids = Set.new
+      loop do
+        annotations = fetch_pending_from(env)
+        break unless annotations
+
+        new_annotations = annotations.reject { |ann| seen_ids.include?(ann["id"]) }
+        if new_annotations.any?
+          new_annotations.each do |ann|
+            seen_ids.add(ann["id"])
+            render_annotation(ann)
+          end
+          $stdout.puts "#{HINT_STYLE.render("  #{seen_ids.size} total seen, #{annotations.size} pending")}"
+          $stdout.puts ""
+        end
+
+        sleep interval
+      rescue Interrupt
+        say ""
+        say "Stopped watching.", :yellow
+        break
+      end
+    end
 
     desc "pending", "Fetch pending annotations"
     method_option :production, type: :boolean, default: false, desc: "Fetch from production"

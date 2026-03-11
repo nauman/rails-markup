@@ -204,17 +204,32 @@ class CliTest < Minitest::Test
     assert_match(/annotation ID/i, output)
   end
 
-  # -- fetch (legacy, still works) --
+  # -- sessions (MCP only) --
 
-  def test_fetch_without_url_shows_error
-    output = capture_output { run_cli("fetch") }
-    assert_match(/No dev URL/, output)
-    assert_match(/bin\/markup configure/, output)
+  def test_sessions_shows_mcp_only_message
+    output = capture_output { run_cli("sessions") }
+    assert_match(/MCP tools/, output)
+    assert_match(/bin\/markup pending/, output)
   end
 
-  def test_fetch_production_without_token_shows_error
+  # -- session (MCP only) --
+
+  def test_session_shows_mcp_only_message
+    output = capture_output { run_cli("session", "abc123") }
+    assert_match(/MCP tools/, output)
+    assert_match(/bin\/markup pending/, output)
+  end
+
+  # -- watch --
+
+  def test_watch_without_url_shows_error
+    output = capture_output { run_cli("watch") }
+    assert_match(/No dev URL/, output)
+  end
+
+  def test_watch_production_without_token_shows_error
     run_cli("configure", "--prod-url", "https://example.com")
-    output = capture_output { run_cli("fetch", "--env=production") }
+    output = capture_output { run_cli("watch", "--production") }
     assert_match(/No production token/, output)
   end
 
@@ -231,6 +246,8 @@ class CliTest < Minitest::Test
     assert_match(/reply/, output)
     assert_match(/acknowledge/, output)
     assert_match(/setup-production/, output)
+    assert_match(/sessions/, output)
+    assert_match(/watch/, output)
   end
 
   private
