@@ -293,7 +293,26 @@ module RailsMarkup
     method_option :mount_path, type: :string, desc: "Engine mount path (default: /admin/annotations)"
     def fetch(env_arg = nil)
       production = env_arg == "production" || options[:environment] == "production"
-      invoke :pending, [], production: production, url: options[:url], token: options[:token], mount_path: options[:mount_path]
+      env = resolve_env(production)
+      return unless env
+
+      annotations = fetch_pending_from(env)
+      return unless annotations
+
+      env_label = production ? "Production" : "Development"
+      $stdout.puts ""
+      $stdout.puts "#{LABEL_STYLE.render(" #{env_label} ")} #{HINT_STYLE.render(env[:base_url])}"
+      $stdout.puts ""
+
+      if annotations.empty?
+        say "  No pending annotations.", :yellow
+        say ""
+        return
+      end
+
+      $stdout.puts annotation_table(annotations)
+      say ""
+      annotations.each { |ann| render_annotation(ann) }
     end
 
     desc "setup-production", "Generate a token and configure production access"
