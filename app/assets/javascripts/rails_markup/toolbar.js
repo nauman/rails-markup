@@ -993,6 +993,11 @@
         const clone = element.cloneNode(true);
         // Strip scripts and event handlers
         clone.querySelectorAll("script").forEach(s => s.remove());
+        // Remove cross-origin images to avoid tainting the canvas
+        const origin = location.origin;
+        clone.querySelectorAll("img").forEach(img => {
+          try { if (img.src && !img.src.startsWith(origin) && !img.src.startsWith("data:")) img.removeAttribute("src"); } catch {}
+        });
 
         const svgNS = "http://www.w3.org/2000/svg";
         const svg = `<svg xmlns="${svgNS}" width="${width}" height="${height}">
@@ -1016,7 +1021,7 @@
           img.onload = () => {
             ctx.drawImage(img, 0, 0, width, height);
             URL.revokeObjectURL(url);
-            resolve(canvas.toDataURL("image/png", 0.7));
+            try { resolve(canvas.toDataURL("image/png", 0.7)); } catch { resolve(null); }
           };
           img.onerror = () => {
             URL.revokeObjectURL(url);
