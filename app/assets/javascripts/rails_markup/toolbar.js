@@ -96,7 +96,8 @@
         .rm-panel-toggle:hover { color:#4361ee; }
         .rm-panel-toggle svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
         .rm-toast-container { position:fixed; z-index:9983; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
-        .rm-pins-container { position:absolute; top:0; left:0; width:100%; z-index:9979; pointer-events:auto; }
+        .rm-pins-container { position:absolute; top:0; left:0; width:100%; z-index:9979; pointer-events:none; }
+        .rm-pin { pointer-events:auto; }
         .rm-popup { display:none; position:fixed; z-index:9982; width:360px; background:rgba(255,255,255,0.95); backdrop-filter:blur(12px); border-radius:16px; box-shadow:0 25px 50px rgba(0,0,0,0.1); border:1px solid rgba(229,231,235,0.8); padding:16px; }
         .rm-popup textarea { width:100%; font-size:13px; border:1px solid #e5e7eb; border-radius:12px; padding:12px; resize:none; outline:none; font-family:inherit; transition:border-color 0.15s,box-shadow 0.15s; }
         .rm-popup textarea:focus { border-color:#818cf8; box-shadow:0 0 0 3px rgba(99,102,241,0.1); }
