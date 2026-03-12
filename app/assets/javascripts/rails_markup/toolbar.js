@@ -300,6 +300,8 @@
       this._boundMouseUp = (e) => self._handleMouseUp(e);
       this._boundClick = (e) => self._handleClick(e);
       this._boundKeyDown = (e) => self._handleKeyDown(e);
+      this._boundTouchStart = (e) => { if (self.active && e.touches[0]) { const t = e.touches[0]; self._handleMouseDown({ clientX: t.clientX, clientY: t.clientY }); } };
+      this._boundTouchEnd = (e) => { if (self.active && e.changedTouches[0]) { const t = e.changedTouches[0]; const el = document.elementFromPoint(t.clientX, t.clientY); if (el && !self._isToolbar(el)) { e.preventDefault(); self._handleMouseUp({ clientX: t.clientX, clientY: t.clientY, preventDefault(){}, stopPropagation(){} }); } } };
 
       // Turbo Drive — full page navigation, reload annotations for new URL
       this._boundTurboNavigate = () => self._onTurboNavigate();
@@ -377,6 +379,8 @@
       document.addEventListener("mouseup", this._boundMouseUp, true);
       document.addEventListener("click", this._boundClick, true);
       document.addEventListener("keydown", this._boundKeyDown, true);
+      document.addEventListener("touchstart", this._boundTouchStart, true);
+      document.addEventListener("touchend", this._boundTouchEnd, true);
     },
 
     _deactivateMode() {
@@ -395,6 +399,8 @@
       document.removeEventListener("mouseup", this._boundMouseUp, true);
       document.removeEventListener("click", this._boundClick, true);
       document.removeEventListener("keydown", this._boundKeyDown, true);
+      document.removeEventListener("touchstart", this._boundTouchStart, true);
+      document.removeEventListener("touchend", this._boundTouchEnd, true);
       this._removeHighlight();
     },
 
