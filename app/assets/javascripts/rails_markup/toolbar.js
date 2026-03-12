@@ -186,7 +186,6 @@
           <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
         </button>
         <div class="rm-toast-container" id="rm-toast-container" style="${toastStyle}"></div>
-        <div class="rm-pins-container" id="rm-pins-container"></div>
         <div class="rm-popup" id="rm-popup" role="dialog" aria-label="Add annotation" aria-modal="false">
           <div style="margin-bottom:12px">
             <p class="rm-popup-el" id="rm-popup-el"></p>
@@ -240,6 +239,11 @@
 
       document.body.appendChild(root);
       this.root = root;
+      // Pins container lives on body (not inside fixed root) so pins scroll with the page
+      const pinsContainer = document.createElement("div");
+      pinsContainer.className = "rm-pins-container";
+      pinsContainer.id = "rm-pins-container";
+      document.body.appendChild(pinsContainer);
       this._onResize = this._debouncedRepositionPins();
       window.addEventListener("resize", this._onResize);
     },
