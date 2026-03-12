@@ -88,7 +88,7 @@
         @keyframes rm-pulse { 0%,100%{box-shadow:0 2px 8px rgba(0,0,0,0.2)} 50%{box-shadow:0 2px 12px rgba(0,0,0,0.3),0 0 0 4px rgba(99,102,241,0.15)} }
         @keyframes rm-toast-in { from{opacity:0;transform:translateY(16px) scale(0.95)} to{opacity:1;transform:translateY(0) scale(1)} }
         @keyframes rm-toast-out { from{opacity:1;transform:translateY(0) scale(1)} to{opacity:0;transform:translateY(16px) scale(0.95)} }
-        #rm-toolbar-root { pointer-events:none; }
+        #rm-toolbar-root { position:fixed; top:0; left:0; width:0; height:0; overflow:visible; pointer-events:none; z-index:9979; }
         #rm-toolbar-root * { box-sizing:border-box; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif; }
         .rm-fab, .rm-panel-toggle, .rm-panel, .rm-popup { pointer-events:auto; }
         .rm-fab { position:fixed; z-index:9980; border-radius:50%; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s; box-shadow:0 4px 12px rgba(0,0,0,0.15); }
