@@ -286,13 +286,14 @@ module RailsMarkup
         bin/markup fetch production   # production
         bin/markup fetch -e production  # also production
     DESC
+    method_option :production, type: :boolean, default: false, desc: "Fetch from production"
     method_option :environment, type: :string, aliases: "-e", enum: %w[dev production],
       desc: "Environment to fetch from"
     method_option :url, type: :string, desc: "Override base URL"
     method_option :token, type: :string, desc: "Override API token"
     method_option :mount_path, type: :string, desc: "Engine mount path (default: /admin/annotations)"
     def fetch(env_arg = nil)
-      production = env_arg == "production" || options[:environment] == "production"
+      production = env_arg == "production" || options[:production] || options[:environment] == "production"
       env = resolve_env(production)
       return unless env
 
