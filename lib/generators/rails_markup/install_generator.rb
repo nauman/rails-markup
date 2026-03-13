@@ -61,6 +61,25 @@ module RailsMarkup
         inject_into_file layout_path, toolbar_block, before: %r{</body>}
       end
 
+      def inject_procfile
+        procfile = File.join(destination_root, "Procfile.dev")
+        return unless File.exist?(procfile)
+
+        content = File.read(procfile)
+
+        if content =~ /^markup:/
+          unless content =~ /^markup:\s*bin\/markup\s+server/
+            gsub_file "Procfile.dev", /^markup:.*$/, "markup: bin/markup server"
+            say_status :update, "Procfile.dev (markup → bin/markup server)", :green
+          else
+            say_status :skip, "Procfile.dev already uses bin/markup server", :yellow
+          end
+        else
+          append_to_file "Procfile.dev", "markup: bin/markup server\n"
+          say_status :append, "Procfile.dev (added markup server)", :green
+        end
+      end
+
       def create_bin_wrapper
         template "bin_markup.erb", "bin/markup"
         chmod "bin/markup", 0o755

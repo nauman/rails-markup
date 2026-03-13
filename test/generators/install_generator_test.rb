@@ -106,4 +106,12 @@ class InstallGeneratorTest < ActiveSupport::TestCase
     assert_match(/RailsMarkupAuthController/, content)
     assert_match(/options\[:base_controller\]/, content)
   end
+
+  # -- Procfile.dev injection --
+
+  test "generator defines inject_procfile method" do
+    generator = RailsMarkup::Generators::InstallGenerator.new
+    assert generator.respond_to?(:inject_procfile),
+      "InstallGenerator should define inject_procfile method"
+  end
 end

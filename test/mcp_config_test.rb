@@ -109,6 +109,60 @@ class McpConfigTest < Minitest::Test
     assert_equal "https://new.com", @config.env["RAILS_MARKUP_PROD_URL"]
   end
 
+  # -- update_env refreshes command/args --
+
+  def test_update_env_refreshes_command_when_bin_markup_exists
+    # Start with a stale config using old ruby path
+    write_mcp_json({
+      "mcpServers" => {
+        "rails-markup" => {
+          "type" => "stdio",
+          "command" => "ruby",
+          "args" => ["/old/path/bin/rails-markup", "mcp"],
+          "env" => { "RAILS_MARKUP_DEV_URL" => "http://localhost:3000" }
+        }
+      }
+    })
+
+    # Create bin/markup so detect_command finds it
+    bin_dir = File.join(@dir, "bin")
+    FileUtils.mkdir_p(bin_dir)
+    File.write(File.join(bin_dir, "markup"), "#!/bin/bash\necho mcp")
+
+    @config.update_env("RAILS_MARKUP_DEV_URL" => "http://localhost:3004")
+
+    data = @config.read
+    server = data["mcpServers"]["rails-markup"]
+    # Local scope uses relative path "bin/markup"
+    assert_equal "bin/markup", server["command"],
+      "Should refresh command to bin/markup, got: #{server["command"]}"
+    assert_equal ["mcp"], server["args"],
+      "Should refresh args to [\"mcp\"], got: #{server["args"]}"
+  end
+
+  def test_update_env_refreshes_command_to_bundle_fallback
+    # Start with stale config
+    write_mcp_json({
+      "mcpServers" => {
+        "rails-markup" => {
+          "type" => "stdio",
+          "command" => "ruby",
+          "args" => ["/old/path/bin/rails-markup", "mcp"],
+          "env" => {}
+        }
+      }
+    })
+
+    # No bin/markup present, should fall back to bundle exec
+    @config.update_env("RAILS_MARKUP_DEV_URL" => "http://localhost:3004")
+
+    data = @config.read
+    server = data["mcpServers"]["rails-markup"]
+    assert_equal "bundle", server["command"],
+      "Should refresh command to bundle, got: #{server["command"]}"
+    assert_equal ["exec", "rails-markup", "mcp"], server["args"]
+  end
+
   # -- display_env --
 
   def test_display_env_masks_tokens_but_not_urls

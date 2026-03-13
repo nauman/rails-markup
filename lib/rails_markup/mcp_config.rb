@@ -103,6 +103,12 @@ module RailsMarkup
 
       config["mcpServers"] ||= {}
       config["mcpServers"][SERVER_KEY] ||= server_entry
+
+      # Always refresh command/args to match current bin/markup detection
+      config["mcpServers"][SERVER_KEY]["type"] = server_entry["type"]
+      config["mcpServers"][SERVER_KEY]["command"] = server_entry["command"]
+      config["mcpServers"][SERVER_KEY]["args"] = server_entry["args"]
+
       config["mcpServers"][SERVER_KEY]["env"] ||= {}
       config["mcpServers"][SERVER_KEY]["env"].merge!(new_vars)
 
@@ -236,7 +242,7 @@ module RailsMarkup
     def detect_command
       bin_wrapper = File.join(@dir, "bin", "markup")
       if File.exist?(bin_wrapper)
-        path = global? ? File.expand_path(bin_wrapper) : bin_wrapper
+        path = global? ? File.expand_path(bin_wrapper) : "bin/markup"
         [path, ["mcp"]]
       else
         ["bundle", ["exec", "rails-markup", "mcp"]]
