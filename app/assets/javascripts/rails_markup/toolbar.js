@@ -239,13 +239,15 @@
 
       document.body.appendChild(root);
       this.root = root;
-      // Pins container lives on body (not inside fixed root) so pins scroll with the page
+      // Pins container lives on body (not inside fixed root); scroll listener keeps them stuck to target elements
       const pinsContainer = document.createElement("div");
       pinsContainer.className = "rm-pins-container";
       pinsContainer.id = "rm-pins-container";
       document.body.appendChild(pinsContainer);
-      this._onResize = this._debouncedRepositionPins();
+      this._onResize = this._debouncedRepositionPins(250);
+      this._onScroll = this._debouncedRepositionPins(50);
       window.addEventListener("resize", this._onResize);
+      window.addEventListener("scroll", this._onScroll, { passive: true });
     },
 
     _bindEvents() {
@@ -843,9 +845,9 @@
       });
     },
 
-    _debouncedRepositionPins() {
+    _debouncedRepositionPins(delay = 250) {
       let timer = null;
-      return () => { if (timer) clearTimeout(timer); timer = setTimeout(() => this._repositionPins(), 250); };
+      return () => { if (timer) clearTimeout(timer); timer = setTimeout(() => this._repositionPins(), delay); };
     },
 
     // ---- Highlight ----
