@@ -263,8 +263,18 @@
         if (chip) self._filterAnnotations(chip.dataset.filter);
       });
 
-      // Event delegation for cards (edit, delete, or click scrolls to element)
-      document.getElementById("rm-panel-list").addEventListener("click", (e) => {
+      // Event delegation for cards (status change, edit, delete, or click scrolls to element)
+      const panelList = document.getElementById("rm-panel-list");
+      panelList.addEventListener("change", (e) => {
+        const select = e.target.closest("[data-status-id]");
+        if (!select) return;
+        e.stopPropagation();
+        const id = parseInt(select.dataset.statusId, 10);
+        self._changeStatus(id, select.value);
+      });
+      panelList.addEventListener("click", (e) => {
+        // Status dropdown click — don't scroll
+        if (e.target.closest("[data-status-id]")) { e.stopPropagation(); return; }
         // Edit button
         const editBtn = e.target.closest("[data-edit-id]");
         if (editBtn) {
@@ -337,14 +347,7 @@
       const panel = document.getElementById("rm-panel");
       if (panel) panel.style.display = "none";
 
-      // Clear pins
-      const pinsContainer = document.getElementById("rm-pins-container");
-      if (pinsContainer) pinsContainer.innerHTML = "";
-
-      // Reset state and reload from storage for new URL
-      this.annotations = [];
-      this.nextId = 1;
-      this._loadFromStorage();
+      // Rerender pins for current page (annotations are global, pins are page-specific)
       this._renderPins();
       this._updateCount();
       this._rebuildList();
@@ -703,7 +706,13 @@
           <span class="rm-card-id">#${annotation.id}</span>
           <span class="rm-card-badge" style="background:${ic.bg};color:${ic.text}">${annotation.intent}</span>
           ${annotation.severity !== "suggestion" ? '<span class="rm-card-badge" style="background:#fff7ed;color:#9a3412">' + annotation.severity + '</span>' : ''}
-          <span style="margin-left:auto;display:flex;gap:2px;">
+          <span style="margin-left:auto;display:flex;gap:2px;align-items:center;">
+            <select data-status-id="${annotation.id}" title="Change status" style="font-size:10px;padding:2px 4px;border:1px solid #e5e7eb;border-radius:4px;background:#fff;color:#6b7280;cursor:pointer;appearance:auto;">
+              <option value="pending"${annotation.status === "pending" ? " selected" : ""}>Pending</option>
+              <option value="acknowledged"${annotation.status === "acknowledged" ? " selected" : ""}>Acknowledged</option>
+              <option value="resolved"${annotation.status === "resolved" ? " selected" : ""}>Resolved</option>
+              <option value="dismissed"${annotation.status === "dismissed" ? " selected" : ""}>Dismissed</option>
+            </select>
             <button data-edit-id="${annotation.id}" title="Edit" style="padding:2px 4px;background:none;border:none;cursor:pointer;color:#d1d5db;border-radius:4px;display:flex;align-items:center;" onmouseover="this.style.color='#6b7280'" onmouseout="this.style.color='#d1d5db'">
               <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M17 3a2.85 2.85 0 114 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
             </button>
@@ -713,7 +722,7 @@
           </span>
         </div>
         <div class="rm-card-body">${this._esc(annotation.comment)}</div>
-        <div class="rm-card-path">${this._esc(annotation.element?.selector || "")}</div>
+        <div class="rm-card-path">${this._esc(annotation.pathname || "")} &rsaquo; ${this._esc(annotation.element?.selector || "")}</div>
         ${annotation.selectedText ? '<div class="rm-card-path" style="font-style:italic">"' + this._esc(annotation.selectedText.slice(0, 60)) + '"</div>' : ''}
         ${threadHtml}
       `;
@@ -779,6 +788,17 @@
       setTimeout(() => document.getElementById("rm-popup-input").focus(), 50);
     },
 
+    _changeStatus(id, newStatus) {
+      const annotation = this.annotations.find(a => a.id === id);
+      if (!annotation) return;
+      annotation.status = newStatus;
+      this._saveToStorage();
+      this._renderPins();
+      this._rebuildList();
+      const label = newStatus.charAt(0).toUpperCase() + newStatus.slice(1);
+      this._showToast(`#${id} marked as ${label}`, newStatus === "resolved" ? "resolved" : "dismissed");
+    },
+
     _deleteAnnotation(id) {
       const idx = this.annotations.findIndex(a => a.id === id);
       if (idx === -1) return;
@@ -823,7 +843,11 @@
     _renderPins() {
       const container = document.getElementById("rm-pins-container");
       if (container) container.innerHTML = "";
-      this.annotations.forEach(a => this._renderPin(a));
+      // Only render pins for annotations on the current page
+      const currentPath = window.location.pathname;
+      this.annotations
+        .filter(a => a.pathname === currentPath)
+        .forEach(a => this._renderPin(a));
     },
 
     _findElement(annotation) {
@@ -885,25 +909,61 @@
 
     // ---- Storage ----
 
-    _storageKey() { return "rm-annotations:" + window.location.pathname; },
+    _storageKey() { return "rm-annotations"; },
+    _pageStorageKey() { return "rm-annotations:" + window.location.pathname; },
 
     _saveToStorage() {
-      try { localStorage.setItem(this._storageKey(), JSON.stringify({ annotations: this.annotations, nextId: this.nextId })); }
+      try {
+        // Save all annotations to a single global key
+        localStorage.setItem(this._storageKey(), JSON.stringify({ annotations: this.annotations, nextId: this.nextId }));
+        // Also keep per-page key for backwards compat (migrate on next load)
+        localStorage.removeItem(this._pageStorageKey());
+      }
       catch (e) { console.warn("[rails-markup] save failed:", e); }
     },
 
     _loadFromStorage() {
       try {
-        const raw = localStorage.getItem(this._storageKey());
-        if (!raw) return;
-        const data = JSON.parse(raw);
-        if (data.annotations) {
-          this.annotations = data.annotations;
-          this.nextId = data.nextId || (this.annotations.length + 1);
-          this._rebuildList();
-          this._updateCount();
+        // Load from global key first
+        let raw = localStorage.getItem(this._storageKey());
+        if (raw) {
+          const data = JSON.parse(raw);
+          if (data.annotations) {
+            this.annotations = data.annotations;
+            this.nextId = data.nextId || (this.annotations.length + 1);
+          }
         }
+        // Migrate any old per-page annotations into global store
+        this._migratePageAnnotations();
+        this._rebuildList();
+        this._updateCount();
       } catch (e) { console.warn("[rails-markup] load failed:", e); }
+    },
+
+    _migratePageAnnotations() {
+      // Find and merge any legacy per-page annotation keys
+      const prefix = "rm-annotations:";
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(prefix)) {
+          try {
+            const data = JSON.parse(localStorage.getItem(key));
+            if (data.annotations && data.annotations.length > 0) {
+              const existingIds = new Set(this.annotations.map(a => a.id));
+              data.annotations.forEach(a => {
+                if (!existingIds.has(a.id)) {
+                  this.annotations.push(a);
+                  if (a.id >= this.nextId) this.nextId = a.id + 1;
+                }
+              });
+            }
+          } catch {}
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+      if (keysToRemove.length > 0) this._saveToStorage();
     },
 
     // ---- Server sync ----
