@@ -118,9 +118,7 @@ class McpConfigTest < Minitest::Test
     )
 
     display = @config.display_env
-    # URLs are shown in full
     assert_equal "https://inventlist.com", display["RAILS_MARKUP_PROD_URL"]
-    # Tokens are masked to xxxx****
     assert_equal "ebYs****", display["RAILS_MARKUP_PROD_TOKEN"]
   end
 
@@ -129,6 +127,157 @@ class McpConfigTest < Minitest::Test
 
     display = @config.display_env
     assert_equal "short", display["RAILS_MARKUP_DEV_TOKEN"]
+  end
+
+  # -- scope_label --
+
+  def test_scope_label_local
+    assert_equal ".mcp.json", @config.scope_label
+  end
+
+  def test_scope_label_global
+    config = RailsMarkup::McpConfig.new(dir: @dir, scope: "global")
+    assert_equal "~/.claude/settings.json", config.scope_label
+  end
+
+  def test_scope_label_codex
+    config = RailsMarkup::McpConfig.new(dir: @dir, scope: "codex")
+    assert_equal "~/.codex/config.toml", config.scope_label
+  end
+
+  # -- global scope (Claude Code) --
+
+  def test_global_resolves_to_claude_settings_path
+    config = RailsMarkup::McpConfig.new(dir: @dir, scope: "global")
+    assert_equal RailsMarkup::McpConfig::GLOBAL_PATH, config.path
+  end
+
+  def test_global_preserves_sibling_keys
+    global_dir = Dir.mktmpdir
+    global_path = File.join(global_dir, "settings.json")
+
+    # Stub GLOBAL_PATH for this test
+    config = RailsMarkup::McpConfig.new(dir: @dir, scope: "global")
+    config.instance_variable_set(:@path, global_path)
+
+    # Pre-populate with non-MCP settings
+    File.write(global_path, JSON.pretty_generate({
+      "enabledPlugins" => ["analysis"],
+      "alwaysThinkingEnabled" => true
+    }))
+
+    config.update_env("RAILS_MARKUP_PROD_URL" => "https://example.com")
+
+    data = JSON.parse(File.read(global_path))
+    assert_equal ["analysis"], data["enabledPlugins"]
+    assert_equal true, data["alwaysThinkingEnabled"]
+    assert_equal "https://example.com", data.dig("mcpServers", "rails-markup", "env", "RAILS_MARKUP_PROD_URL")
+  ensure
+    FileUtils.remove_entry(global_dir) if global_dir
+  end
+
+  def test_global_uses_absolute_path_for_bin_wrapper
+    bin_dir = File.join(@dir, "bin")
+    FileUtils.mkdir_p(bin_dir)
+    File.write(File.join(bin_dir, "markup"), "#!/bin/bash\necho mcp")
+
+    config = RailsMarkup::McpConfig.new(dir: @dir, scope: "global")
+    global_path = File.join(@dir, "global_settings.json")
+    config.instance_variable_set(:@path, global_path)
+
+    config.update_env("RAILS_MARKUP_PROD_URL" => "https://example.com")
+
+    data = JSON.parse(File.read(global_path))
+    command = data.dig("mcpServers", "rails-markup", "command")
+    assert command.start_with?("/"), "Global command should be absolute path, got: #{command}"
+  end
+
+  # -- codex scope (TOML) --
+
+  def test_codex_resolves_to_codex_config_path
+    config = RailsMarkup::McpConfig.new(dir: @dir, scope: "codex")
+    assert_equal RailsMarkup::McpConfig::CODEX_PATH, config.path
+  end
+
+  def test_codex_creates_toml_file
+    toml_path = File.join(@dir, "config.toml")
+    config = RailsMarkup::McpConfig.new(dir: @dir, scope: "codex")
+    config.instance_variable_set(:@path, toml_path)
+
+    config.update_env("RAILS_MARKUP_PROD_URL" => "https://example.com")
+
+    assert File.exist?(toml_path)
+    content = File.read(toml_path)
+    assert_match(/\[mcp_servers\.rails-markup\]/, content)
+    assert_match(/RAILS_MARKUP_PROD_URL = "https:\/\/example.com"/, content)
+  end
+
+  def test_codex_reads_toml_env
+    toml_path = File.join(@dir, "config.toml")
+    config = RailsMarkup::McpConfig.new(dir: @dir, scope: "codex")
+    config.instance_variable_set(:@path, toml_path)
+
+    File.write(toml_path, <<~TOML)
+      [mcp_servers.rails-markup]
+      command = "bundle"
+      args = ["exec", "rails-markup", "mcp"]
+
+      [mcp_servers.rails-markup.env]
+      RAILS_MARKUP_PROD_URL = "https://example.com"
+      RAILS_MARKUP_PROD_TOKEN = "secret123"
+    TOML
+
+    env = config.env
+    assert_equal "https://example.com", env["RAILS_MARKUP_PROD_URL"]
+    assert_equal "secret123", env["RAILS_MARKUP_PROD_TOKEN"]
+  end
+
+  def test_codex_preserves_other_toml_sections
+    toml_path = File.join(@dir, "config.toml")
+    config = RailsMarkup::McpConfig.new(dir: @dir, scope: "codex")
+    config.instance_variable_set(:@path, toml_path)
+
+    File.write(toml_path, <<~TOML)
+      [mcp_servers.other-server]
+      command = "npx"
+      args = ["-y", "other-mcp"]
+    TOML
+
+    config.update_env("RAILS_MARKUP_PROD_URL" => "https://example.com")
+
+    content = File.read(toml_path)
+    assert_match(/\[mcp_servers\.other-server\]/, content)
+    assert_match(/command = "npx"/, content)
+    assert_match(/\[mcp_servers\.rails-markup\]/, content)
+  end
+
+  def test_codex_merges_env_on_update
+    toml_path = File.join(@dir, "config.toml")
+    config = RailsMarkup::McpConfig.new(dir: @dir, scope: "codex")
+    config.instance_variable_set(:@path, toml_path)
+
+    config.update_env("RAILS_MARKUP_PROD_URL" => "https://example.com")
+    config.update_env("RAILS_MARKUP_PROD_TOKEN" => "token123")
+
+    env = config.env
+    assert_equal "https://example.com", env["RAILS_MARKUP_PROD_URL"]
+    assert_equal "token123", env["RAILS_MARKUP_PROD_TOKEN"]
+  end
+
+  def test_codex_uses_absolute_path_for_bin_wrapper
+    bin_dir = File.join(@dir, "bin")
+    FileUtils.mkdir_p(bin_dir)
+    File.write(File.join(bin_dir, "markup"), "#!/bin/bash\necho mcp")
+
+    toml_path = File.join(@dir, "config.toml")
+    config = RailsMarkup::McpConfig.new(dir: @dir, scope: "codex")
+    config.instance_variable_set(:@path, toml_path)
+
+    config.update_env("RAILS_MARKUP_PROD_URL" => "https://example.com")
+
+    content = File.read(toml_path)
+    # Should have absolute path in command
+    assert_match(/command = "\//, content)
   end
 
   private

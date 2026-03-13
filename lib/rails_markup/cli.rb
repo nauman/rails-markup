@@ -21,6 +21,18 @@ module RailsMarkup
     ERROR_STYLE   = Lipgloss::Style.new.bold(true).foreground("#EF4444")
 
     desc "server", "Start HTTP + MCP server"
+    long_desc <<-DESC
+      Start the combined HTTP annotation server and MCP stdio bridge.
+
+      The HTTP server serves the annotation toolbar and API endpoints.
+      The MCP bridge lets AI editors communicate via JSON-RPC over stdio.
+
+      Examples:
+
+        bin/markup server               # default port 4747
+
+        bin/markup server --port 5000   # custom port
+    DESC
     method_option :port, type: :numeric, default: 4747, desc: "HTTP server port"
     def server
       srv = RailsMarkup::Server.new(port: options[:port])
@@ -28,6 +40,15 @@ module RailsMarkup
     end
 
     desc "init", "Interactive setup wizard"
+    long_desc <<-DESC
+      Launch the interactive TUI setup wizard.
+
+      Walks through toolbar accent, position, size, screenshots,
+      production URL, and MCP scope (local/global/codex).
+      Writes the Rails initializer and MCP config on confirm.
+
+      Requires a terminal with arrow key support.
+    DESC
     def init
       wizard = Cli::SetupWizard.new(dir: Dir.pwd)
       Bubbletea.run(wizard)
@@ -41,17 +62,50 @@ module RailsMarkup
     end
 
     desc "mcp", "Start MCP-only server (stdio)"
+    long_desc <<-DESC
+      Start the MCP server in stdio-only mode (no HTTP server).
+
+      This is what AI editors (Claude Code, Codex CLI, Cursor) invoke
+      via .mcp.json or global config. Communicates over stdin/stdout
+      using the JSON-RPC MCP protocol.
+
+      You rarely need to run this manually — it's called by the editor.
+    DESC
     method_option :port, type: :numeric, default: 4747, desc: "HTTP server port to proxy to"
     def mcp
       srv = RailsMarkup::Server.new(port: options[:port], mcp_only: true)
       srv.start
     end
 
-    desc "configure", "Set .mcp.json env vars for this project"
+    desc "configure", "Set MCP env vars (local, global, or codex)"
+    long_desc <<-DESC
+      Write environment variables to the MCP config file for this project
+      or globally for all projects.
+
+      Scope flags:
+
+        (default)  Write to .mcp.json in the current directory
+
+        --global   Write to ~/.claude/settings.json (Claude Code)
+
+        --codex    Write to ~/.codex/config.toml (OpenAI Codex CLI)
+
+      Examples:
+
+        bin/markup configure --dev-url http://localhost:3000
+
+        bin/markup configure --prod-url URL --prod-token TOKEN
+
+        bin/markup configure --prod-url URL --global
+
+        bin/markup configure --prod-url URL --codex
+    DESC
     method_option :prod_url,   type: :string, desc: "Production URL (RAILS_MARKUP_PROD_URL)"
     method_option :prod_token, type: :string, desc: "Production API token (RAILS_MARKUP_PROD_TOKEN)"
     method_option :dev_url,    type: :string, desc: "Dev URL (RAILS_MARKUP_DEV_URL)"
     method_option :mount_path, type: :string, desc: "Engine mount path (RAILS_MARKUP_MOUNT_PATH)"
+    method_option :global, type: :boolean, default: false, desc: "Write to ~/.claude/settings.json"
+    method_option :codex,  type: :boolean, default: false, desc: "Write to ~/.codex/config.toml"
     def configure
       env_updates = McpConfig::ENV_KEYS.each_with_object({}) do |(opt, env_key), hash|
         hash[env_key] = options[opt] if options[opt]
@@ -62,6 +116,8 @@ module RailsMarkup
         say ""
         say "  bin/markup configure --dev-url http://localhost:3000"
         say "  bin/markup configure --prod-url URL --prod-token TOKEN"
+        say "  bin/markup configure --prod-url URL --global     # Claude Code global"
+        say "  bin/markup configure --prod-url URL --codex      # Codex CLI global"
         say ""
         say "  Dev needs only a URL (no token). Production requires both."
         say ""
@@ -70,27 +126,40 @@ module RailsMarkup
         return
       end
 
-      config = McpConfig.new
+      config = McpConfig.new(scope: resolve_scope)
       config.update_env(env_updates)
-      $stdout.puts "#{LABEL_STYLE.render("Updated .mcp.json")}  #{HINT_STYLE.render("(#{Dir.pwd})")}"
-      $stdout.puts env_table(config.display_env)
+      $stdout.puts "#{LABEL_STYLE.render("Updated #{config.scope_label}")}  #{HINT_STYLE.render("(#{config.path})")}"
+      $stdout.puts env_table(config.display_env, label: config.scope_label)
     end
 
-    desc "status", "Show current .mcp.json config (tokens masked)"
+    desc "status", "Show MCP config across all scopes"
+    long_desc <<-DESC
+      Display the current MCP configuration across all scopes.
+
+      Checks .mcp.json (local), ~/.claude/settings.json (Claude Code),
+      and ~/.codex/config.toml (Codex CLI). Tokens are masked.
+    DESC
     def status
-      config = McpConfig.new
-      unless config.exist?
-        say "No .mcp.json found in #{Dir.pwd}", :yellow
-        say "Run: rails-markup configure --prod-url URL --prod-token TOKEN"
-        return
+      found = false
+
+      McpConfig::SCOPES.each do |scope|
+        config = McpConfig.new(scope: scope)
+        next unless config.exist?
+
+        env = config.display_env
+        next if env.empty?
+
+        found = true
+        say ""
+        $stdout.puts env_table(env, label: config.scope_label)
       end
 
-      env = config.display_env
-      say ""
-      if env.empty?
-        say "  (no env vars set for rails-markup)"
-      else
-        $stdout.puts env_table(env)
+      unless found
+        say ""
+        say "No MCP config found. Run:", :yellow
+        say "  rails-markup configure --prod-url URL --prod-token TOKEN"
+        say "  rails-markup configure --prod-url URL --global   # Claude Code global"
+        say "  rails-markup configure --prod-url URL --codex    # Codex CLI global"
       end
       say ""
     end
@@ -118,6 +187,18 @@ module RailsMarkup
     end
 
     desc "watch", "Watch for new annotations (polls pending)"
+    long_desc <<-DESC
+      Poll for new annotations and print them as they arrive.
+      Press Ctrl+C to stop.
+
+      Examples:
+
+        bin/markup watch                      # local dev, 5s interval
+
+        bin/markup watch --production         # production
+
+        bin/markup watch --interval 2         # poll every 2s
+    DESC
     method_option :production, type: :boolean, default: false, desc: "Watch production"
     method_option :url, type: :string, desc: "Override base URL"
     method_option :token, type: :string, desc: "Override API token"
@@ -159,6 +240,15 @@ module RailsMarkup
     end
 
     desc "pending", "Fetch pending annotations"
+    long_desc <<-DESC
+      Fetch all pending (unresolved) annotations from the Rails API.
+
+      Examples:
+
+        bin/markup pending                    # local dev
+
+        bin/markup pending --production       # production
+    DESC
     method_option :production, type: :boolean, default: false, desc: "Fetch from production"
     method_option :url, type: :string, desc: "Override base URL"
     method_option :token, type: :string, desc: "Override API token"
@@ -187,6 +277,15 @@ module RailsMarkup
     end
 
     desc "resolve-all", "Resolve all pending annotations"
+    long_desc <<-DESC
+      Batch-resolve every pending annotation.
+
+      Examples:
+
+        bin/markup resolve-all --summary "Shipped in v2.1"
+
+        bin/markup resolve-all --production --summary "Done"
+    DESC
     method_option :summary, type: :string, desc: "Summary applied to all"
     method_option :production, type: :boolean, default: false, desc: "Target production"
     def resolve_all
@@ -217,6 +316,15 @@ module RailsMarkup
     end
 
     desc "resolve ID", "Resolve an annotation with a summary"
+    long_desc <<-DESC
+      Mark a single annotation as resolved.
+
+      Examples:
+
+        bin/markup resolve 42 --summary "Fixed padding"
+
+        bin/markup resolve 42 --production
+    DESC
     method_option :summary, type: :string, desc: "Summary of how it was resolved"
     method_option :production, type: :boolean, default: false, desc: "Target production"
     def resolve(id = nil)
@@ -232,6 +340,15 @@ module RailsMarkup
     end
 
     desc "dismiss ID", "Dismiss an annotation with a reason"
+    long_desc <<-DESC
+      Dismiss an annotation (won't fix, not applicable, etc).
+
+      Examples:
+
+        bin/markup dismiss 42 --reason "By design"
+
+        bin/markup dismiss 42 --production --reason "Duplicate"
+    DESC
     method_option :reason, type: :string, desc: "Reason for dismissing"
     method_option :production, type: :boolean, default: false, desc: "Target production"
     def dismiss(id = nil)
@@ -247,6 +364,15 @@ module RailsMarkup
     end
 
     desc "reply ID MESSAGE", "Reply to an annotation thread"
+    long_desc <<-DESC
+      Add a reply to an annotation's discussion thread.
+
+      Examples:
+
+        bin/markup reply 42 "Fixed in commit abc123"
+
+        bin/markup reply 42 "Deployed" --production
+    DESC
     method_option :production, type: :boolean, default: false, desc: "Target production"
     def reply(id = nil, message = nil)
       return say("#{ERROR_STYLE.render("Error:")} annotation ID is required") unless id
@@ -262,6 +388,15 @@ module RailsMarkup
     end
 
     desc "acknowledge ID", "Mark an annotation as acknowledged"
+    long_desc <<-DESC
+      Mark an annotation as seen/acknowledged without resolving it.
+
+      Examples:
+
+        bin/markup acknowledge 42
+
+        bin/markup acknowledge 42 --production
+    DESC
     method_option :production, type: :boolean, default: false, desc: "Target production"
     def acknowledge(id = nil)
       return say("#{ERROR_STYLE.render("Error:")} annotation ID is required") unless id
@@ -317,7 +452,21 @@ module RailsMarkup
     end
 
     desc "setup-production", "Generate a token and configure production access"
+    long_desc <<-DESC
+      Generate a secure API token, save it to MCP config, and print
+      instructions for adding it to your Rails credentials.
+
+      Examples:
+
+        bin/markup setup-production --url=https://yourapp.com
+
+        bin/markup setup-production --url=https://yourapp.com --global
+
+        bin/markup setup-production --url=https://yourapp.com --codex
+    DESC
     method_option :url, type: :string, desc: "Production URL (e.g. https://yourapp.com)"
+    method_option :global, type: :boolean, default: false, desc: "Write to ~/.claude/settings.json"
+    method_option :codex,  type: :boolean, default: false, desc: "Write to ~/.codex/config.toml"
     def setup_production
       require "securerandom"
 
@@ -329,8 +478,7 @@ module RailsMarkup
 
       token = SecureRandom.hex(24)
 
-      # Save to .mcp.json
-      config = McpConfig.new
+      config = McpConfig.new(scope: resolve_scope)
       config.update_env({
         "RAILS_MARKUP_PROD_URL" => prod_url,
         "RAILS_MARKUP_PROD_TOKEN" => token
@@ -341,7 +489,7 @@ module RailsMarkup
       say ""
       say "Token: #{token}"
       say ""
-      say "Saved to .mcp.json — CLI and MCP tools are ready."
+      say "Saved to #{config.scope_label} — CLI and MCP tools are ready."
       say ""
       say "Now add the same token to your Rails app:"
       say ""
@@ -364,17 +512,145 @@ module RailsMarkup
       say ""
     end
 
+    desc "man", "Full command reference with examples"
+    def man
+      require_relative "version"
+      $stdout.puts render_man_page
+    end
+
+    desc "version", "Print version"
+    def version
+      require_relative "version"
+      say "rails-markup #{RailsMarkup::VERSION}"
+    end
+
     def self.exit_on_failure?
       true
     end
 
     private
 
+    def render_man_page
+      require_relative "version"
+      sections = []
+
+      sections << HEADER_STYLE.render(" RAILS-MARKUP(1) — v#{RailsMarkup::VERSION} ")
+      sections << ""
+      sections << "  Point-and-click annotation tool for AI agents."
+      sections << "  Annotate Rails views in the browser; AI editors read and act on your feedback."
+      sections << ""
+
+      sections << LABEL_STYLE.render(" GETTING STARTED ")
+      sections << ""
+      sections << "  #{HINT_STYLE.render("# 1. Add to Gemfile")}"
+      sections << '  gem "rails-markup"'
+      sections << ""
+      sections << "  #{HINT_STYLE.render("# 2. Run install generator")}"
+      sections << "  rails generate rails_markup:install"
+      sections << "  rails db:migrate"
+      sections << ""
+      sections << "  #{HINT_STYLE.render("# 3. Interactive setup (toolbar + MCP config)")}"
+      sections << "  bin/markup init"
+      sections << ""
+      sections << "  #{HINT_STYLE.render("# 4. Or configure manually")}"
+      sections << "  bin/markup configure --dev-url http://localhost:3000"
+      sections << "  bin/markup setup-production --url https://yourapp.com"
+      sections << ""
+
+      sections << LABEL_STYLE.render(" SETUP ")
+      sections << ""
+      sections << "  init                      Interactive TUI wizard"
+      sections << "  configure [OPTIONS]       Set MCP env vars"
+      sections << "    --prod-url URL            Production URL"
+      sections << "    --prod-token TOKEN        Production API token"
+      sections << "    --dev-url URL             Development URL"
+      sections << "    --mount-path PATH         Engine mount path"
+      sections << "    --global                  Write to ~/.claude/settings.json"
+      sections << "    --codex                   Write to ~/.codex/config.toml"
+      sections << "  setup-production --url URL Generate token + configure production"
+      sections << "    --global / --codex        Same scope flags as configure"
+      sections << "  status                    Show config across all scopes"
+      sections << ""
+
+      sections << LABEL_STYLE.render(" SERVERS ")
+      sections << ""
+      sections << "  server [--port N]         Start HTTP + MCP server (default: 4747)"
+      sections << "  mcp    [--port N]         Start MCP-only server (stdio, for editors)"
+      sections << ""
+
+      sections << LABEL_STYLE.render(" ANNOTATIONS ")
+      sections << ""
+      sections << "  pending [--production]    Fetch pending annotations"
+      sections << "  fetch [ENV]               Alias for pending (accepts 'production' arg)"
+      sections << "  watch [--production]      Poll and print new annotations (Ctrl+C to stop)"
+      sections << "    --interval N              Seconds between polls (default: 5)"
+      sections << "  resolve ID [--summary S]  Resolve an annotation"
+      sections << "  resolve-all [--summary S] Batch-resolve all pending"
+      sections << "  dismiss ID [--reason R]   Dismiss an annotation"
+      sections << "  reply ID MESSAGE          Reply to an annotation thread"
+      sections << "  acknowledge ID            Mark as seen"
+      sections << ""
+      sections << "  #{HINT_STYLE.render("All annotation commands accept --production to target prod.")}"
+      sections << ""
+
+      sections << LABEL_STYLE.render(" MCP CONFIG SCOPES ")
+      sections << ""
+      sections << "  local    .mcp.json                     This project only"
+      sections << "  global   ~/.claude/settings.json       Claude Code (all projects)"
+      sections << "  codex    ~/.codex/config.toml          Codex CLI (all projects)"
+      sections << ""
+      sections << "  #{HINT_STYLE.render("Commands fall back through local → global → codex when resolving env.")}"
+      sections << ""
+
+      sections << LABEL_STYLE.render(" QUICK RECIPES ")
+      sections << ""
+      sections << "  #{HINT_STYLE.render("# Dev setup")}"
+      sections << "  bin/markup configure --dev-url http://localhost:3000"
+      sections << ""
+      sections << "  #{HINT_STYLE.render("# Production setup (writes to global Claude Code config)")}"
+      sections << "  bin/markup setup-production --url https://myapp.com --global"
+      sections << ""
+      sections << "  #{HINT_STYLE.render("# Watch for annotations in real-time")}"
+      sections << "  bin/markup watch --production --interval 2"
+      sections << ""
+      sections << "  #{HINT_STYLE.render("# Resolve everything after a deploy")}"
+      sections << "  bin/markup resolve-all --production --summary \"Shipped in v2.1\""
+      sections << ""
+
+      sections << LABEL_STYLE.render(" INFO ")
+      sections << ""
+      sections << "  man                       This reference page"
+      sections << "  version                   Print version"
+      sections << "  help [COMMAND]            Thor help for a specific command"
+      sections << ""
+
+      sections.join("\n")
+    end
+
     # ── Environment resolution ────────────────────────────────
 
+    def resolve_scope
+      return "global" if options[:global]
+      return "codex"  if options[:codex]
+
+      "local"
+    end
+
+    # Check local first, then fall back to global/codex configs.
+    def resolve_mcp_env
+      McpConfig::SCOPES.each do |scope|
+        config = McpConfig.new(scope: scope)
+        next unless config.exist?
+
+        env = config.raw_env
+        return env unless env.empty?
+      end
+
+      {}
+    end
+
     def resolve_env(production)
-      config = McpConfig.new
-      mcp_env = config.exist? ? config.raw_env : {}
+      mcp_env = resolve_mcp_env
 
       if production
         base_url = options[:url] || mcp_env["RAILS_MARKUP_PROD_URL"]
@@ -521,7 +797,7 @@ module RailsMarkup
       say ""
     end
 
-    def env_table(env_hash)
+    def env_table(env_hash, label: ".mcp.json")
       rows = env_hash.map { |k, v| [k, v] }
       table = Lipgloss::Table.new
         .headers(["Variable", "Value"])
@@ -537,7 +813,7 @@ module RailsMarkup
         .render
 
       title = LABEL_STYLE.render(" Rails Markup ")
-      path = HINT_STYLE.render(".mcp.json")
+      path = HINT_STYLE.render(label)
       "#{title} #{path}\n\n#{table}"
     end
 

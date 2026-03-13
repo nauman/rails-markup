@@ -22,7 +22,7 @@ class SetupWizardTest < Minitest::Test
     wizard.init
 
     view = wizard.view
-    assert_match(/Step 1\/6/, view)
+    assert_match(/Step 1\/7/, view)
     assert_match(/Toolbar Accent/, view)
     assert_match(/indigo/, view)
   end
@@ -52,7 +52,7 @@ class SetupWizardTest < Minitest::Test
     wizard.update(key_msg(:enter))
 
     view = wizard.view
-    assert_match(/Step 2\/6/, view)
+    assert_match(/Step 2\/7/, view)
     assert_match(/Toolbar Position/, view)
     assert_equal "indigo", wizard.choices[:toolbar_accent]
   end
@@ -77,7 +77,10 @@ class SetupWizardTest < Minitest::Test
     "https://myapp.com".each_char { |c| wizard.update(key_msg(:rune, c)) }
     wizard.update(key_msg(:enter))
 
-    # Step 6: confirm — press Enter to confirm
+    # Step 6: scope — select local (first option)
+    wizard.update(key_msg(:enter))
+
+    # Step 7: confirm — press Enter to confirm
     _, cmd = wizard.update(key_msg(:enter))
 
     assert wizard.completed
@@ -86,6 +89,7 @@ class SetupWizardTest < Minitest::Test
     assert_equal "slim", wizard.choices[:toolbar_size]
     assert_equal true, wizard.choices[:enable_screenshots]
     assert_equal "https://myapp.com", wizard.choices[:url]
+    assert_equal "local", wizard.choices[:scope]
 
     # Initializer should have been written
     init_path = File.join(@dir, "config", "initializers", "rails_markup.rb")
@@ -93,6 +97,66 @@ class SetupWizardTest < Minitest::Test
     content = File.read(init_path)
     assert_match(/config\.toolbar_accent = "indigo"/, content)
     assert_match(/config\.toolbar_position = "bl"/, content)
+
+    # .mcp.json should have been written (local scope)
+    mcp_path = File.join(@dir, ".mcp.json")
+    assert File.exist?(mcp_path), ".mcp.json should exist"
+    data = JSON.parse(File.read(mcp_path))
+    assert_equal "https://myapp.com", data.dig("mcpServers", "rails-markup", "env", "RAILS_MARKUP_PROD_URL")
+  end
+
+  def test_scope_step_shows_options
+    wizard = RailsMarkup::Cli::SetupWizard.new(dir: @dir)
+    wizard.init
+
+    # Steps 1-4: select first option
+    4.times { wizard.update(key_msg(:enter)) }
+
+    # Step 5: URL — skip
+    wizard.update(key_msg(:enter))
+
+    # Step 6: scope — should show options
+    view = wizard.view
+    assert_match(/Step 6\/7/, view)
+    assert_match(/MCP Server Scope/, view)
+    assert_match(/This project only/, view)
+    assert_match(/Claude Code/, view)
+    assert_match(/Codex CLI/, view)
+  end
+
+  def test_scope_step_global_selection
+    wizard = RailsMarkup::Cli::SetupWizard.new(dir: @dir)
+    wizard.init
+
+    # Steps 1-4: select first option
+    4.times { wizard.update(key_msg(:enter)) }
+
+    # Step 5: URL — skip
+    wizard.update(key_msg(:enter))
+
+    # Step 6: scope — select global (second option)
+    wizard.update(key_msg(:down))
+    wizard.update(key_msg(:enter))
+
+    assert_equal "global", wizard.choices[:scope]
+  end
+
+  def test_scope_step_codex_selection
+    wizard = RailsMarkup::Cli::SetupWizard.new(dir: @dir)
+    wizard.init
+
+    # Steps 1-4: select first option
+    4.times { wizard.update(key_msg(:enter)) }
+
+    # Step 5: URL — skip
+    wizard.update(key_msg(:enter))
+
+    # Step 6: scope — select codex (third option)
+    wizard.update(key_msg(:down))
+    wizard.update(key_msg(:down))
+    wizard.update(key_msg(:enter))
+
+    assert_equal "codex", wizard.choices[:scope]
   end
 
   def test_esc_aborts_wizard
@@ -115,9 +179,9 @@ class SetupWizardTest < Minitest::Test
     # Step 5: URL — just press enter to skip
     wizard.update(key_msg(:enter))
 
-    # Should be on confirm step
+    # Should be on scope step
     view = wizard.view
-    assert_match(/Step 6\/6/, view)
+    assert_match(/Step 6\/7/, view)
     assert_nil wizard.choices[:url]
   end
 

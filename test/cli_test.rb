@@ -55,7 +55,7 @@ class CliTest < Minitest::Test
 
   def test_status_no_file_shows_warning
     output = capture_output { run_cli("status") }
-    assert_match(/No .mcp.json found/, output)
+    assert_match(/No MCP config found/, output)
   end
 
   def test_status_shows_urls_unmasked_and_tokens_masked
@@ -67,13 +67,13 @@ class CliTest < Minitest::Test
     refute_match(/ebYsw895N9YKwWFLqS2dxTLU/, output)   # Full token never shown
   end
 
-  def test_status_shows_empty_env
+  def test_status_shows_empty_env_as_no_config
     File.write(File.join(@dir, ".mcp.json"), JSON.pretty_generate({
       "mcpServers" => { "rails-markup" => { "env" => {} } }
     }))
 
     output = capture_output { run_cli("status") }
-    assert_match(/no env vars set/, output)
+    assert_match(/No MCP config found/, output)
   end
 
   # -- setup-production --
@@ -124,7 +124,7 @@ class CliTest < Minitest::Test
 
   def test_fetch_production_without_token_shows_error
     run_cli("configure", "--prod-url", "https://example.com")
-    output = capture_output { run_cli("fetch", "--env=production") }
+    output = capture_output { run_cli("fetch", "production") }
     assert_match(/No production token/, output)
   end
 
@@ -262,6 +262,30 @@ class CliTest < Minitest::Test
     assert_match(/resolve-all/, output)
     assert_match(/sessions/, output)
     assert_match(/watch/, output)
+    assert_match(/man/, output)
+    assert_match(/version/, output)
+  end
+
+  # -- man --
+
+  def test_man_shows_full_reference
+    output = capture_output { run_cli("man") }
+    assert_match(/RAILS-MARKUP/, output)
+    assert_match(/GETTING STARTED/, output)
+    assert_match(/SETUP/, output)
+    assert_match(/SERVERS/, output)
+    assert_match(/ANNOTATIONS/, output)
+    assert_match(/MCP CONFIG SCOPES/, output)
+    assert_match(/QUICK RECIPES/, output)
+    assert_match(/\.claude\/settings\.json/, output)
+    assert_match(/\.codex\/config\.toml/, output)
+  end
+
+  # -- version --
+
+  def test_version_shows_version_string
+    output = capture_output { run_cli("version") }
+    assert_match(/rails-markup \d+\.\d+/, output)
   end
 
   private

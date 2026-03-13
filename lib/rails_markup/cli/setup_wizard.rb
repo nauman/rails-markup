@@ -8,11 +8,11 @@ require_relative "initializer_writer"
 module RailsMarkup
   class Cli
     # Interactive TUI setup wizard using Bubbletea's Elm architecture.
-    # 6-step state machine: accent → position → size → screenshots → url → confirm
+    # 7-step state machine: accent → position → size → screenshots → url → scope → confirm
     class SetupWizard
       include Bubbletea::Model
 
-      STEPS = %i[accent position size screenshots url confirm].freeze
+      STEPS = %i[accent position size screenshots url scope confirm].freeze
 
       STEP_CONFIG = {
         accent: {
@@ -42,6 +42,16 @@ module RailsMarkup
           title: "Production URL",
           type: :text,
           hint: "Optional — press Enter to skip"
+        },
+        scope: {
+          title: "MCP Server Scope",
+          type: :select,
+          options: %w[local global codex],
+          labels: {
+            "local"  => "This project only (.mcp.json)",
+            "global" => "All projects — Claude Code (~/.claude/settings.json)",
+            "codex"  => "All projects — Codex CLI (~/.codex/config.toml)"
+          }
         },
         confirm: {
           title: "Confirm Setup",
@@ -178,6 +188,7 @@ module RailsMarkup
         when :size        then @choices[:toolbar_size] = value
         when :screenshots then @choices[:enable_screenshots] = (value == "yes")
         when :url         then @choices[:url] = value
+        when :scope       then @choices[:scope] = value
         end
       end
 
@@ -189,13 +200,14 @@ module RailsMarkup
 
       def write_config
         writer = InitializerWriter.new(dir: @dir)
-        init_opts = @choices.except(:url)
+        init_opts = @choices.except(:url, :scope)
         writer.write(**init_opts)
 
-        if @choices[:url]
-          config = McpConfig.new(dir: @dir)
-          config.update_env("RAILS_MARKUP_PROD_URL" => @choices[:url])
-        end
+        scope = @choices[:scope] || "local"
+        config = McpConfig.new(dir: @dir, scope: scope)
+        env_vars = {}
+        env_vars["RAILS_MARKUP_PROD_URL"] = @choices[:url] if @choices[:url]
+        config.update_env(env_vars)
       end
 
       def render_summary
