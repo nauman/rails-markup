@@ -732,6 +732,7 @@
 
     _rebuildList() {
       const list = document.getElementById("rm-panel-list");
+      if (!list) return;
       list.innerHTML = "";
       const filtered = this._filteredAnnotations();
       if (filtered.length === 0) {
