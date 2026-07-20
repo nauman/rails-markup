@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "ipaddr"
 require "net/http"
 require "uri"
 require_relative "mcp_config"
@@ -17,6 +18,8 @@ module RailsMarkup
   #   RAILS_MARKUP_PROD_TOKEN — production API token
   #   RAILS_MARKUP_MOUNT_PATH — engine mount path (default: /admin/annotations)
   class McpServer
+    class TargetError < StandardError; end
+
     ENV_SCHEMA = {
       environment: {
         type: "string",
@@ -185,7 +188,68 @@ module RailsMarkup
     # All annotation access goes through the engine's external controller:
     #   {base_url}{mount_path}/external/...
     def external_api_base(base_url)
-      "#{base_url}#{mount_path}/external"
+      external_api_url(base_url)
+    end
+
+    def external_api_url(base_url, *segments)
+      uri = base_url.is_a?(URI::HTTP) ? base_url.dup : URI.parse(base_url)
+      base_parts = safe_path_parts(uri.path, label: "configured URL path")
+      mount_parts = safe_path_parts(mount_path, label: "configured mount path")
+      suffix = segments.map { |segment| safe_path_segment(segment) }
+      uri.path = "/#{(base_parts + mount_parts + ["external"] + suffix).join('/')}"
+      uri.to_s
+    rescue URI::InvalidURIError
+      fail TargetError, "Configured URL is invalid. Update Rails Markup configuration."
+    end
+
+    def validated_target_url(value, environment:)
+      uri = URI.parse(value.to_s)
+      if environment == "production" && !(uri.is_a?(URI::HTTPS) && uri.host && !uri.host.empty?)
+        fail TargetError, "Configured production URL must use HTTPS."
+      end
+      unless uri.is_a?(URI::HTTP) && uri.host && !uri.host.empty?
+        fail TargetError, "Configured #{environment} URL must use HTTP or HTTPS."
+      end
+      if uri.userinfo || uri.query || uri.fragment
+        fail TargetError, "Configured #{environment} URL cannot include credentials, query, or fragment."
+      end
+      safe_path_parts(uri.path, label: "configured URL path")
+
+      if environment == "development" && uri.scheme == "http" && !loopback_host?(uri.host)
+        fail TargetError, "Configured development HTTP URL must use a loopback host."
+      end
+
+      uri
+    rescue URI::InvalidURIError
+      fail TargetError, "Configured #{environment} URL is invalid."
+    end
+
+    def loopback_host?(host)
+      return true if host.casecmp?("localhost")
+
+      address = IPAddr.new(host)
+      address.loopback?
+    rescue IPAddr::InvalidAddressError
+      false
+    end
+
+    def safe_path_parts(path, label:)
+      path.to_s.split("/").reject(&:empty?).map do |part|
+        decoded = URI::DEFAULT_PARSER.unescape(part)
+        if %w[. ..].include?(decoded) || decoded.include?("/") || decoded.include?("\\")
+          fail TargetError, "The #{label} cannot contain traversal segments."
+        end
+        part
+      end
+    end
+
+    def safe_path_segment(segment)
+      value = segment.to_s
+      decoded = URI::DEFAULT_PARSER.unescape(value)
+      unless value.match?(/\A[A-Za-z0-9._~-]+\z/) && !%w[. ..].include?(decoded)
+        fail TargetError, "API path segment is invalid."
+      end
+      value
     end
 
     # ── JSON-RPC dispatch ─────────────────────────────────────
@@ -257,6 +321,8 @@ module RailsMarkup
 
       content = [{ type: "text", text: result.to_json }]
       result_response(id, { content: content })
+    rescue TargetError => e
+      tool_error_response(id, e.message)
     end
 
     def validation_error(name, args)
@@ -271,6 +337,9 @@ module RailsMarkup
         return "annotationId is required when resource is annotation." if resource == "annotation" && blank?(args["annotationId"])
         return "annotationId is only valid when resource is annotation." if resource != "annotation" && args.key?("annotationId")
         return "sessionId is only valid for pending or session resources." if !%w[pending session].include?(resource) && args.key?("sessionId")
+        if environment == "production" && %w[sessions session].include?(resource)
+          return "sessions and session reads are available only in development."
+        end
       when "rails_markup_transition"
         return "action must be acknowledge or resolve." unless %w[acknowledge resolve].include?(args["action"])
         return "annotationId is required." if blank?(args["annotationId"])
@@ -307,6 +376,9 @@ module RailsMarkup
 
     def handle_read(args)
       return handle_fetch_production(args) if args["environment"] == "production" && args["resource"] == "pending"
+      if args["resource"] == "annotation" && (args["environment"] == "production" || dev_url)
+        return handle_remote_annotation(args)
+      end
 
       case args["resource"]
       when "sessions"
@@ -346,38 +418,40 @@ module RailsMarkup
     def handle_local_or_proxy(action, args, &fallback)
       return fallback.call unless dev_url
 
+      target = validated_target_url(dev_url, environment: "development")
+
       case action
       when :list_sessions
         []
       when :get_session
         { error: "Sessions not available when using dev API proxy" }
       when :get_pending, :get_all_pending
-        dev_fetch_pending
+        dev_fetch_pending(target)
       when :acknowledge
-        dev_action(args["annotationId"], "acknowledge")
+        dev_action(target, args["annotationId"], "acknowledge")
       when :resolve
-        dev_action(args["annotationId"], "resolve", summary: args["summary"])
+        dev_action(target, args["annotationId"], "resolve", summary: args["summary"])
       when :dismiss
-        dev_action(args["annotationId"], "dismiss", reason: args["reason"])
+        dev_action(target, args["annotationId"], "dismiss", reason: args["reason"])
       when :reply
-        dev_action(args["annotationId"], "reply", message: args["message"])
+        dev_action(target, args["annotationId"], "reply", message: args["message"])
       else
         fallback.call
       end
     end
 
-    def dev_fetch_pending
-      resp = http_get("#{external_api_base(dev_url)}/pending")
+    def dev_fetch_pending(target)
+      resp = http_get(external_api_url(target, "pending"))
       return { error: "Dev API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
 
       data = JSON.parse(resp.body)
       { count: (data["annotations"] || []).size, annotations: data["annotations"] || [] }
     end
 
-    def dev_action(annotation_id, action, **params)
+    def dev_action(target, annotation_id, action, **params)
       return { error: "No annotationId provided." } unless annotation_id
 
-      resp = http_patch("#{external_api_base(dev_url)}/#{annotation_id}/#{action}", params: params)
+      resp = http_patch(external_api_url(target, annotation_id, action), params: params)
       return { error: "Dev API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
 
       JSON.parse(resp.body)
@@ -386,13 +460,8 @@ module RailsMarkup
     # ── Production API ────────────────────────────────────────
 
     def handle_fetch_production(args)
-      base = prod_url
-      token = prod_token
-      return { error: "No production URL. Run: bin/markup configure --prod-url=URL" } unless base
-
-      api = external_api_base(base)
-
-      resp = http_get("#{api}/pending", token: token)
+      target, token = production_target
+      resp = http_get(external_api_url(target, "pending"), token: token)
       return { error: "API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
 
       data = JSON.parse(resp.body)
@@ -402,17 +471,36 @@ module RailsMarkup
     end
 
     def handle_production_action(args, action, **params)
-      base = prod_url
-      token = prod_token
       annotation_id = args["annotationId"]
-      return { error: "No production URL. Run: bin/markup configure --prod-url=URL" } unless base
       return { error: "No annotationId provided." } unless annotation_id
 
-      api = external_api_base(base)
-      resp = http_patch("#{api}/#{annotation_id}/#{action}", token: token, params: params)
+      target, token = production_target
+      resp = http_patch(external_api_url(target, annotation_id, action), token: token, params: params)
       return { error: "API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
 
       JSON.parse(resp.body)
+    end
+
+    def handle_remote_annotation(args)
+      if args["environment"] == "production"
+        target, token = production_target
+      else
+        target = validated_target_url(dev_url, environment: "development")
+        token = nil
+      end
+      resp = http_get(external_api_url(target, args["annotationId"]), token: token)
+      return { error: "API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
+
+      JSON.parse(resp.body)
+    end
+
+    def production_target
+      fail TargetError, "No production URL is configured. Run bin/markup configure." if blank?(prod_url)
+
+      target = validated_target_url(prod_url, environment: "production")
+      fail TargetError, "Production token is not configured. Run bin/markup configure." if blank?(prod_token)
+
+      [target, prod_token]
     end
 
     # ── HTTP helpers ──────────────────────────────────────────

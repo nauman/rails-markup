@@ -420,6 +420,84 @@ class McpServerTest < Minitest::Test
     ENV.delete("RAILS_MARKUP_MOUNT_PATH")
   end
 
+  def test_external_api_base_preserves_configured_base_path
+    mcp = RailsMarkup::McpServer.new(store: @store, input: StringIO.new, output: @output)
+    assert_equal "https://example.test/my-app/admin/annotations/external",
+      mcp.send(:external_api_base, "https://example.test/my-app")
+  end
+
+  def test_external_api_url_cannot_discard_or_escape_mount
+    mcp = RailsMarkup::McpServer.new(store: @store, input: StringIO.new, output: @output)
+    assert_equal "https://example.test/my-app/admin/annotations/external/abc/resolve",
+      mcp.send(:external_api_url, "https://example.test/my-app", "abc", "resolve")
+
+    assert_raises(RailsMarkup::McpServer::TargetError) do
+      mcp.send(:external_api_url, "https://example.test/my-app", "../outside")
+    end
+    ENV["RAILS_MARKUP_MOUNT_PATH"] = "/../../outside"
+    assert_raises(RailsMarkup::McpServer::TargetError) do
+      mcp.send(:external_api_base, "https://example.test/my-app")
+    end
+  ensure
+    ENV.delete("RAILS_MARKUP_MOUNT_PATH")
+  end
+
+  def test_production_target_requires_configured_https
+    %w[http://example.test ftp://example.test].each do |url|
+      ENV["RAILS_MARKUP_PROD_URL"] = url
+      response = call_tool_response("rails_markup_read", resource: "pending", environment: "production")
+      assert_equal true, response.dig("result", "isError")
+      assert_match(/configured production URL must use HTTPS/i, response.dig("result", "content", 0, "text"))
+    end
+  ensure
+    ENV.delete("RAILS_MARKUP_PROD_URL")
+  end
+
+  def test_production_target_requires_configured_token
+    ENV["RAILS_MARKUP_PROD_URL"] = "https://configured.test"
+    response = call_tool_response("rails_markup_read", resource: "pending", environment: "production")
+
+    assert_equal true, response.dig("result", "isError")
+    assert_match(/production token is not configured/i, response.dig("result", "content", 0, "text"))
+  ensure
+    ENV.delete("RAILS_MARKUP_PROD_URL")
+  end
+
+  def test_watch_rejects_production_targeting
+    response = call_tool_response("rails_markup_watch", environment: "production")
+    assert_equal true, response.dig("result", "isError")
+  end
+
+  def test_development_http_accepts_only_loopback_hosts
+    accepted = %w[http://localhost:3000 http://127.0.0.42:3000 http://[::1]:3000]
+    rejected = %w[http://example.test:3000 http://192.168.1.5:3000]
+    mcp = RailsMarkup::McpServer.new(store: @store, input: StringIO.new, output: @output)
+
+    accepted.each { |url| assert_equal url, mcp.send(:validated_target_url, url, environment: "development").to_s }
+    rejected.each do |url|
+      assert_raises(RailsMarkup::McpServer::TargetError) do
+        mcp.send(:validated_target_url, url, environment: "development")
+      end
+    end
+    assert_equal "https://staging.example.test/base",
+      mcp.send(:validated_target_url, "https://staging.example.test/base", environment: "development").to_s
+  end
+
+  def test_configured_targets_reject_userinfo_query_and_fragment
+    urls = [
+      "https://user:password@example.test",
+      "https://example.test?token=secret",
+      "https://example.test/path#fragment"
+    ]
+    mcp = RailsMarkup::McpServer.new(store: @store, input: StringIO.new, output: @output)
+
+    urls.each do |url|
+      assert_raises(RailsMarkup::McpServer::TargetError) do
+        mcp.send(:validated_target_url, url, environment: "production")
+      end
+    end
+  end
+
   def test_config_falls_back_to_mcp_json
     dir = Dir.mktmpdir
     mcp_json = File.join(dir, ".mcp.json")
