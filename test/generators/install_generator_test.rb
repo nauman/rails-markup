@@ -33,6 +33,11 @@ class InstallGeneratorTest < ActiveSupport::TestCase
     assert_equal "application", opt.default
   end
 
+  test "table_name option defaults to rails_markup_annotations" do
+    opt = RailsMarkup::Generators::InstallGenerator.class_options[:table_name]
+    assert_equal "rails_markup_annotations", opt.default
+  end
+
   # -- Templates exist --
 
   test "migration template exists" do

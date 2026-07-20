@@ -18,6 +18,8 @@ module RailsMarkup
         desc: "Base controller class for authentication"
       class_option :layout, type: :string, default: "application",
         desc: "Layout to inject the toolbar into"
+      class_option :table_name, type: :string, default: "rails_markup_annotations",
+        desc: "Database table name for annotations (must match config.table_name)"
 
       def copy_migration
         migration_template "create_rails_markup_annotations.rb.erb",
@@ -26,6 +28,16 @@ module RailsMarkup
 
       def create_initializer
         template "initializer.rb.erb", "config/initializers/rails_markup.rb"
+      end
+
+      # Keep the model's config.table_name in lockstep with the table the
+      # migration actually creates when a custom name is requested.
+      def configure_table_name
+        return if options[:table_name] == "rails_markup_annotations"
+
+        gsub_file "config/initializers/rails_markup.rb",
+          /^\s*#?\s*config\.table_name\s*=.*$/,
+          %(  config.table_name = "#{options[:table_name]}")
       end
 
       def create_auth_controller

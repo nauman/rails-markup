@@ -11,6 +11,11 @@ All notable changes to this project will be documented in this file.
 - Stable per-annotation client UUIDs with a database uniqueness constraint for safe request replay.
 - Keyset (cursor) pagination for the dashboard "Load more".
 - `thor` and `lipgloss` declared as explicit runtime dependencies; `csv` pinned.
+- Install generator `--table-name` option that writes the chosen table into both the migration and `config.table_name` for fresh custom-table installs.
+
+### Changed
+
+- Minimum Ruby is now 3.2 (aligns with the resolved Rails 8.1 baseline); CI matrix is 3.2–3.4.
 
 ### Fixed
 
@@ -19,6 +24,7 @@ All notable changes to this project will be documented in this file.
 - The `client_uuid` migration now honors a custom `config.table_name` instead of silently skipping renamed tables (which had defeated create-time deduplication).
 - Legacy per-page localStorage migration no longer discards annotations whose ids collide across pages.
 - Toolbar panel and popup no longer overflow small mobile screens.
+- Generated install migration uses `json` on SQLite/MySQL instead of PostgreSQL-only `jsonb`, so fresh installs no longer fail on non-Postgres databases.
 - CLI test load order so the complete suite can run in one process.
 - Repeated Turbo execution no longer replaces the toolbar singleton or leaks navigation listeners.
 
