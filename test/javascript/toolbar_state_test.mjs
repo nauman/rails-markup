@@ -119,6 +119,44 @@ test("invalid legacy client IDs are replaced and their outbox entries rekeyed", 
   assert.equal(harness.toolbar.outbox[uuidA].annotation.clientId, uuidA);
 });
 
+test("distinct records sharing an invalid client ID remain distinct queued upserts", (t) => {
+  const invalidClientId = "rm-shared-legacy-id";
+  const harness = createToolbarHarness({
+    uuids: [uuidA, uuidB],
+    storage: {
+      "rm-annotations": {
+        annotations: [
+          { id: 1, clientId: invalidClientId, comment: "First record", pathname: "/" },
+          { id: 2, clientId: invalidClientId, comment: "Second record", pathname: "/" }
+        ],
+        nextId: 3,
+        outbox: {
+          [invalidClientId]: {
+            type: "upsert",
+            annotation: { clientId: invalidClientId, comment: "Second record" },
+            dirtyFields: ["content"]
+          }
+        }
+      }
+    }
+  });
+  t.after(() => harness.reset());
+
+  harness.toolbar._loadFromStorage();
+
+  assert.deepEqual(Array.from(harness.toolbar.annotations, annotation => annotation.comment), ["First record", "Second record"]);
+  assert.deepEqual(Array.from(harness.toolbar.annotations, annotation => annotation.clientId), [uuidA, uuidB]);
+  assert.deepEqual(Object.keys(harness.toolbar.outbox).sort(), [uuidA, uuidB]);
+  assert.equal(harness.toolbar.outbox[uuidA].type, "upsert");
+  assert.equal(harness.toolbar.outbox[uuidB].type, "upsert");
+  assert.equal(harness.toolbar.outbox[uuidA].annotation.comment, "First record");
+  assert.equal(harness.toolbar.outbox[uuidB].annotation.comment, "Second record");
+  assert.deepEqual(
+    Object.values(harness.toolbar.outbox).map(entry => entry.annotation.comment).sort(),
+    ["First record", "Second record"]
+  );
+});
+
 test("legacy per-page migration preserves records with colliding local IDs", (t) => {
   const harness = createToolbarHarness({
     uuids: [uuidA, uuidB, "33333333-3333-4333-8333-333333333333"],

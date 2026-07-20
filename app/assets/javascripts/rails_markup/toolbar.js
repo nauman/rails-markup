@@ -1019,19 +1019,16 @@
     _normalizeStoredState() {
       if (!this.outbox || typeof this.outbox !== "object" || Array.isArray(this.outbox)) this.outbox = {};
 
-      const replacementClientIds = new Map();
       const usedClientIds = new Set(this.annotations.map(annotation => annotation.clientId).filter(clientId => this._validClientId(clientId)));
+      const invalidOutboxOwners = this._invalidOutboxOwners();
       const normalized = this.annotations.map((annotation, index) => {
         const originalClientId = annotation.clientId;
         if (!this._validClientId(originalClientId)) {
-          let replacementClientId = originalClientId ? replacementClientIds.get(originalClientId) : null;
-          if (!replacementClientId) {
-            do { replacementClientId = this._newClientId(); } while (usedClientIds.has(replacementClientId));
-            usedClientIds.add(replacementClientId);
-            if (originalClientId) replacementClientIds.set(originalClientId, replacementClientId);
-          }
+          let replacementClientId;
+          do { replacementClientId = this._newClientId(); } while (usedClientIds.has(replacementClientId));
+          usedClientIds.add(replacementClientId);
           annotation.clientId = replacementClientId;
-          this._rekeyOutbox(originalClientId, replacementClientId);
+          if (invalidOutboxOwners.get(originalClientId) === annotation) this._rekeyOutbox(originalClientId, replacementClientId);
         }
         if (annotation.serverId == null) annotation.serverId = annotation.server_id ?? null;
         if (annotation.serverUpdatedAt == null) annotation.serverUpdatedAt = annotation.server_updated_at ?? null;
@@ -1114,6 +1111,24 @@
 
     _validClientId(clientId) {
       return typeof clientId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientId);
+    },
+
+    _invalidOutboxOwners() {
+      const owners = new Map();
+      this.annotations.forEach(annotation => {
+        const clientId = annotation.clientId;
+        if (!clientId || this._validClientId(clientId) || owners.has(clientId) || !this.outbox[clientId]) return;
+
+        const peers = this.annotations.filter(candidate => candidate.clientId === clientId);
+        const desired = this.outbox[clientId].annotation || this.outbox[clientId];
+        const desiredId = desired.id ?? desired.metadata?.localId;
+        const desiredComment = desired.comment ?? desired.content;
+        const owner = peers.find(candidate => desiredId != null && candidate.id === desiredId)
+          || peers.find(candidate => desiredComment != null && (candidate.comment ?? candidate.content) === desiredComment)
+          || peers[0];
+        owners.set(clientId, owner);
+      });
+      return owners;
     },
 
     _rekeyOutbox(oldClientId, newClientId) {
