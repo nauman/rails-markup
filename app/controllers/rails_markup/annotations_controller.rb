@@ -19,7 +19,10 @@ module RailsMarkup
     def create
       return render_invalid_metadata if client_supplied_author?
 
-      annotation = Annotation.new(annotation_params)
+      attributes = annotation_params
+      return render_invalid_legacy_client_id unless attributes
+
+      annotation = Annotation.new(attributes)
       assign_current_user(annotation)
 
       if annotation.client_uuid.present? && (existing = Annotation.find_by(client_uuid: annotation.client_uuid))
@@ -40,7 +43,11 @@ module RailsMarkup
 
     # GET /feedback/api/annotations?page_url=/current?page=variant
     def index
-      annotations = Annotation.for_page(params[:page_url]).recent
+      annotations = Annotation.for_page(params[:page_url]).recent.to_a
+      unless annotations.all? { |annotation| Annotation.valid_client_uuid?(annotation.client_uuid) }
+        return render json: { error: "annotation identities require repair" }, status: :service_unavailable
+      end
+
       render json: annotations.map(&:as_api_json)
     end
 
@@ -153,11 +160,19 @@ module RailsMarkup
       permitted = params.permit(:page_url, :content, :intent, :severity, :selected_text, :selectedText, :clientId, target: {}, metadata: {})
       permitted[:selected_text] ||= permitted.delete(:selectedText)
       requested_client_uuid = permitted.delete(:clientId).to_s.strip
-      permitted[:client_uuid] = requested_client_uuid if Annotation.valid_client_uuid?(requested_client_uuid)
+      if Annotation.valid_client_uuid?(requested_client_uuid)
+        permitted[:client_uuid] = requested_client_uuid
+      elsif requested_client_uuid.present?
+        permitted[:client_uuid] = Annotation.legacy_client_uuid(
+          session_id: params[:session_id], legacy_client_id: requested_client_uuid
+        )
+      end
       permitted[:page_url] ||= request.referer || "/"
       permitted[:target] = normalize_target(params[:target]) if params[:target].present?
       permitted[:metadata] = normalize_hash(params[:metadata], ALLOWED_METADATA_KEYS) if params[:metadata].present?
       permitted
+    rescue ArgumentError
+      nil
     end
 
     def browser_attributes
@@ -193,6 +208,10 @@ module RailsMarkup
 
     def render_invalid_uuid
       render json: { error: "client uuid must be a canonical UUID" }, status: :unprocessable_entity
+    end
+
+    def render_invalid_legacy_client_id
+      render json: { error: "legacy client id requires a valid session identity" }, status: :unprocessable_entity
     end
 
     def render_invalid_metadata

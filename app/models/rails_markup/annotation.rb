@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "securerandom"
+require "digest/sha1"
 
 module RailsMarkup
   class Annotation < ActiveRecord::Base
@@ -12,6 +13,9 @@ module RailsMarkup
     BROWSER_ATTRIBUTES = %w[content intent severity selected_text target page_url].freeze
     BROWSER_METADATA_KEYS = %w[tool url localId sessionId screenshot].freeze
     CLIENT_UUID_PATTERN = /\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i
+    LEGACY_SESSION_PATTERN = /\Arm-[0-9a-f]{16}\z/i
+    LEGACY_CLIENT_ID_LIMIT = 256
+    LEGACY_UUID_NAMESPACE = "265e7cf0-8be6-5e21-8f31-a582cfde8646"
 
     # Optional user association — no FK constraint, engine doesn't know host users table
     belongs_to :user, optional: true
@@ -34,6 +38,21 @@ module RailsMarkup
 
     def self.valid_client_uuid?(value)
       value.is_a?(String) && CLIENT_UUID_PATTERN.match?(value)
+    end
+
+    def self.legacy_client_uuid(session_id:, legacy_client_id:)
+      session_id = session_id.to_s
+      legacy_client_id = legacy_client_id.to_s
+      unless LEGACY_SESSION_PATTERN.match?(session_id) && legacy_client_id.present? && legacy_client_id.bytesize <= LEGACY_CLIENT_ID_LIMIT
+        raise ArgumentError, "legacy client identity requires a valid session and client id"
+      end
+
+      namespace = [LEGACY_UUID_NAMESPACE.delete("-")].pack("H*")
+      bytes = Digest::SHA1.digest(namespace + "#{session_id}\0#{legacy_client_id}").bytes.first(16)
+      bytes[6] = (bytes[6] & 0x0f) | 0x50
+      bytes[8] = (bytes[8] & 0x3f) | 0x80
+      hex = bytes.pack("C*").unpack1("H*")
+      "#{hex[0, 8]}-#{hex[8, 4]}-#{hex[12, 4]}-#{hex[16, 4]}-#{hex[20, 12]}"
     end
 
     scope :pending, -> { where(status: "pending") }

@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - `toolbar_enabled` configuration to show or hide the entire annotation toolbar system.
 - `fab_visible` configuration to hide the floating action button independently, while pins and the panel stay active; exposed as a step in the setup wizard.
 - Stable per-annotation client UUIDs with a database uniqueness constraint for safe request replay.
+- Repeatable `rails_markup:client_uuids:repair` and `rails_markup:client_uuids:verify` tasks for rolling upgrades.
 - Keyset (cursor) pagination for the dashboard "Load more".
 - `thor` and `lipgloss` declared as explicit runtime dependencies; `csv` pinned.
 - Install generator `--table-name` option that writes the chosen table into both the migration and `config.table_name` for fresh custom-table installs.
@@ -31,6 +32,8 @@ All notable changes to this project will be documented in this file.
 - Kanban board cards gain a status `<select>` so touch devices can change status without drag-and-drop.
 - CLI test load order so the complete suite can run in one process.
 - Repeated Turbo execution no longer replaces the toolbar singleton or leaks navigation listeners.
+- Legacy numeric/string toolbar IDs now map to deterministic canonical UUIDs scoped by session, preserving exact replay and conflict detection without colliding after local storage is reset.
+- Existing-install UUID backfill remains nullable during mixed-version deployment; invalid rows fail pulls closed and can be repaired idempotently before a later explicit `NOT NULL` contract migration.
 
 ## [1.0.0] - 2026-03-12
 

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "engine_test_helper"
+require "rake"
 
 class ClientUuidMigrationTest < ActiveSupport::TestCase
   UUID_PATTERN = /\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i
@@ -26,14 +27,41 @@ class ClientUuidMigrationTest < ActiveSupport::TestCase
     insert_client_uuid(canonical)
 
     load MIGRATION
-    BackfillRailsMarkupClientUuids.new.migrate(:up)
+    migration = BackfillRailsMarkupClientUuids.new
+    migration.migrate(:up)
 
     client_uuids = connection.select_values("SELECT client_uuid FROM #{quoted_table} ORDER BY id")
     assert_equal 3, client_uuids.uniq.length
     assert client_uuids.all? { |client_uuid| UUID_PATTERN.match?(client_uuid) }
     assert_includes client_uuids, canonical
-    assert_equal false, connection.columns(@table_name).find { |column| column.name == "client_uuid" }.null
+    assert_equal true, connection.columns(@table_name).find { |column| column.name == "client_uuid" }.null
     assert connection.indexes(@table_name).any? { |index| index.unique && index.columns == ["client_uuid"] }
+
+    migration.migrate(:up)
+    assert_equal client_uuids, connection.select_values("SELECT client_uuid FROM #{quoted_table} ORDER BY id")
+
+    insert_client_uuid(nil)
+    assert_equal 1, RailsMarkup::ClientUuidMaintenance.invalid_count(connection:, table_name: @table_name)
+
+    migration.migrate(:up)
+    assert_equal 0, RailsMarkup::ClientUuidMaintenance.invalid_count(connection:, table_name: @table_name)
+    repaired = connection.select_values("SELECT client_uuid FROM #{quoted_table} ORDER BY id")
+    assert_equal 4, repaired.uniq.length
+    assert repaired.all? { |client_uuid| UUID_PATTERN.match?(client_uuid) }
+    assert RailsMarkup::ClientUuidMaintenance.verify!(connection:, table_name: @table_name)
+
+    connection.remove_index(@table_name, :client_uuid)
+    error = assert_raises(RuntimeError) do
+      RailsMarkup::ClientUuidMaintenance.verify!(connection:, table_name: @table_name)
+    end
+    assert_match(/unique index/, error.message)
+  end
+
+  test "the host Rails application discovers repair and verify tasks" do
+    Rails.application.load_tasks unless Rake::Task.task_defined?("rails_markup:client_uuids:repair")
+
+    assert Rake::Task.task_defined?("rails_markup:client_uuids:repair")
+    assert Rake::Task.task_defined?("rails_markup:client_uuids:verify")
   end
 
   private

@@ -293,7 +293,22 @@ dummy app that actually loads Turbo and the toolbar.
 
 ## Compatibility and migration
 
-No database migration is required beyond the already-added unique client UUID.
+The client UUID upgrade uses a rolling expand/backfill/contract sequence. The
+1.2 migration adds the column when needed, replaces blank or noncanonical
+legacy values with unique canonical UUIDs, and ensures a unique index, while
+leaving the upgrade column nullable until every old writer is drained. Operators
+then run the idempotent `rails_markup:client_uuids:repair` and
+`rails_markup:client_uuids:verify` tasks. A later explicit contract migration
+may add `NOT NULL` only after verification remains clean. Fresh installs create
+the column as `NOT NULL`. Pull reads containing a lingering invalid identity
+fail closed and never repair data as a side effect.
+
+Blank compatibility POST identities receive a new server UUID. Nonblank legacy
+IDs are never stored raw: a validated route session identity plus the raw legacy
+ID is mapped through a fixed engine UUID namespace. This preserves exact replay,
+conflict, and concurrency semantics within one session while the same reset
+local ID in a later session maps to a different UUID.
+
 Existing localStorage documents are upgraded in place by adding UUIDs and sync
 fields. Every legacy local annotation that is not already represented by a
 server mapping is added to the new outbox as an upsert; therefore the migrated

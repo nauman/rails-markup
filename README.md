@@ -33,6 +33,28 @@ bin/rails railties:install:migrations FROM=rails_markup
 bin/rails db:migrate
 ```
 
+### Rails Markup 1.2 rolling UUID upgrade
+
+The 1.2 upgrade migration adds, repairs, and uniquely indexes `client_uuid`, but
+deliberately leaves the column nullable while old application instances may
+still be serving traffic. Fresh installs create it as `NOT NULL` immediately.
+
+For a rolling upgrade:
+
+1. Run the copied migrations and deploy 1.2 to every application instance.
+2. Wait until every pre-1.2 instance has stopped.
+3. Repair any rows written during the mixed-version window, then verify:
+
+```bash
+bin/rails rails_markup:client_uuids:repair
+bin/rails rails_markup:client_uuids:verify
+```
+
+Both commands are safe to repeat. A pull containing any lingering blank or
+noncanonical identity returns `503` without mutating data. Do not add a
+`NOT NULL` constraint until verification stays green after old instances are
+drained; that explicit contract migration belongs in a later release.
+
 The generator creates:
 
 | File | Purpose |

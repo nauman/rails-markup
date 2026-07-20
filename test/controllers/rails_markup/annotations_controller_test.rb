@@ -9,6 +9,7 @@ module RailsMarkup
     STATUS_UUID = "ea20742d-f640-4984-ab7a-cf957d56c7e2"
     DIRTY_UUID = "157784ee-d8a3-45ac-99e4-6d44cd3a0b20"
     RACE_UUID = "169253af-c17c-4f37-80ff-12de5e808c73"
+    LEGACY_SESSION = "rm-0123456789abcdef"
 
     setup do
       @csrf_token = authenticate_rails_markup_admin
@@ -78,6 +79,23 @@ module RailsMarkup
       get "/feedback/api/annotations", params: { page_url: "/same?tab=two" }, as: :json
 
       assert_equal ["Two"], response.parsed_body.map { |annotation| annotation["content"] }
+    end
+
+    test "pull fails closed without mutating a lingering invalid identity" do
+      Annotation.insert_all!([{
+        client_uuid: "legacy-local-id",
+        page_url: "/rolling-upgrade",
+        content: "Written by an old instance",
+        created_at: Time.current,
+        updated_at: Time.current
+      }])
+
+      assert_no_changes -> { Annotation.find_by!(page_url: "/rolling-upgrade").client_uuid } do
+        get "/feedback/api/annotations", params: { page_url: "/rolling-upgrade" }, as: :json
+      end
+
+      assert_response :service_unavailable
+      assert_equal "annotation identities require repair", response.parsed_body["error"]
     end
 
     test "put creates and returns the uuid annotation" do
@@ -160,6 +178,82 @@ module RailsMarkup
       client_uuids = Annotation.where(content: %w[First Second]).pluck(:client_uuid)
       assert_equal 2, client_uuids.uniq.length
       assert client_uuids.all? { |client_uuid| RailsMarkup::Annotation.valid_client_uuid?(client_uuid) }
+    end
+
+    test "legacy client ids deduplicate exact replays within one session" do
+      params = { page_url: "/legacy", content: "Legacy replay", clientId: "1", metadata: { localId: 1 } }
+
+      post session_annotations_path(LEGACY_SESSION), params:, as: :json
+      assert_response :created
+      first_id = response.parsed_body["id"]
+      derived_uuid = response.parsed_body["clientId"]
+
+      assert_no_difference "Annotation.count" do
+        post session_annotations_path(LEGACY_SESSION), params:, as: :json
+      end
+
+      assert_response :ok
+      assert_equal first_id, response.parsed_body["id"]
+      assert_equal derived_uuid, response.parsed_body["clientId"]
+      assert Annotation.valid_client_uuid?(derived_uuid)
+      refute_equal "1", derived_uuid
+    end
+
+    test "legacy client ids conflict on changed replay within one session" do
+      post session_annotations_path(LEGACY_SESSION),
+        params: { page_url: "/legacy", content: "Original", clientId: "1" }, as: :json
+
+      assert_no_difference "Annotation.count" do
+        post session_annotations_path(LEGACY_SESSION),
+          params: { page_url: "/legacy", content: "Changed", clientId: "1" }, as: :json
+      end
+
+      assert_response :conflict
+    end
+
+    test "the same legacy local id in different sessions receives distinct UUIDs" do
+      post session_annotations_path("rm-1111111111111111"),
+        params: { page_url: "/legacy", content: "One", clientId: "1" }, as: :json
+      first_uuid = response.parsed_body["clientId"]
+
+      post session_annotations_path("rm-2222222222222222"),
+        params: { page_url: "/legacy", content: "Two", clientId: "1" }, as: :json
+      second_uuid = response.parsed_body["clientId"]
+
+      refute_equal first_uuid, second_uuid
+      assert Annotation.valid_client_uuid?(first_uuid)
+      assert Annotation.valid_client_uuid?(second_uuid)
+    end
+
+    test "legacy client ids fail closed without a valid session identity" do
+      assert_no_difference "Annotation.count" do
+        post session_annotations_path("bad session"),
+          params: { page_url: "/legacy", content: "Unsafe", clientId: "1" }, as: :json
+      end
+
+      assert_response :unprocessable_entity
+    end
+
+    test "concurrent legacy exact replays return the deterministic UUID winner" do
+      derived_uuid = Annotation.legacy_client_uuid(session_id: LEGACY_SESSION, legacy_client_id: "7")
+      candidate = Annotation.new(client_uuid: derived_uuid, content: "Concurrent", page_url: "/legacy")
+      race = proc do
+        Annotation.create!(client_uuid: derived_uuid, content: "Concurrent", page_url: "/legacy")
+        raise ActiveRecord::RecordNotUnique
+      end
+
+      Annotation.stub :new, candidate do
+        candidate.stub :save, race do
+          assert_difference "Annotation.count", 1 do
+            post session_annotations_path(LEGACY_SESSION),
+              params: { page_url: "/legacy", content: "Concurrent", clientId: "7" }, as: :json
+          end
+        end
+      end
+
+      assert_response :ok
+      assert_equal derived_uuid, response.parsed_body["clientId"]
+      assert_equal 1, Annotation.where(client_uuid: derived_uuid).count
     end
 
     test "compatibility post rejects client metadata author" do
