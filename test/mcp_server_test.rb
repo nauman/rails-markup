@@ -98,6 +98,105 @@ class McpServerTest < Minitest::Test
     assert_equal true, tools.fetch("rails_markup_dismiss").dig("annotations", "destructiveHint")
   end
 
+  def test_canonical_read_dispatches_each_resource
+    session = @store.create_session(url: "http://example.com")
+    annotation = @store.create_annotation(session_id: session.id, target: "div", content: "fix this")
+
+    assert_equal 1, call_tool("rails_markup_read", resource: "sessions").size
+    assert_equal session.id, call_tool("rails_markup_read", resource: "session", sessionId: session.id)["id"]
+    assert_equal annotation.id, call_tool("rails_markup_read", resource: "annotation", annotationId: annotation.id)["id"]
+    assert_equal annotation.id, call_tool("rails_markup_read", resource: "pending").first["id"]
+  end
+
+  def test_canonical_transition_dispatches_each_action
+    acknowledged = create_test_annotation
+    resolved = create_test_annotation
+
+    assert_equal "acknowledged", call_tool(
+      "rails_markup_transition", action: "acknowledge", annotationId: acknowledged.id
+    )["status"]
+    result = call_tool(
+      "rails_markup_transition", action: "resolve", annotationId: resolved.id, summary: "Fixed padding"
+    )
+    assert_equal "resolved", result["status"]
+    assert_equal "Fixed padding", result["thread"].first["message"]
+  end
+
+  def test_canonical_tools_validate_enums_and_conditional_ids
+    invalid_calls = [
+      ["rails_markup_read", { resource: "unknown" }],
+      ["rails_markup_read", { resource: "session" }],
+      ["rails_markup_read", { resource: "annotation" }],
+      ["rails_markup_transition", { action: "close", annotationId: "123" }]
+    ]
+
+    invalid_calls.each do |name, arguments|
+      response = call_tool_response(name, **arguments)
+      assert_equal true, response.dig("result", "isError"), "expected #{name} to reject #{arguments.keys}"
+    end
+  end
+
+  def test_canonical_and_legacy_tools_reject_unknown_arguments
+    calls = [
+      ["rails_markup_read", { resource: "pending", baseUrl: "https://attacker.test" }],
+      ["rails_markup_reply", { annotationId: "123", message: "safe", token: "caller-secret" }],
+      ["rails_markup_get_pending", { url: "https://attacker.test" }],
+      ["rails_markup_fetch_production", { markAcknowledged: true }]
+    ]
+
+    calls.each do |name, arguments|
+      response = nil
+      capture_stderr { response = call_tool_response(name, **arguments) }
+      assert_equal true, response.dig("result", "isError"), "expected #{name} to reject unknown arguments"
+      assert_match(/Remove unsupported arguments/, response.dig("result", "content", 0, "text"))
+    end
+  end
+
+  def test_legacy_alias_table_maps_every_supported_name_to_canonical_tools
+    expected = {
+      "rails_markup_sessions" => ["rails_markup_read", { "resource" => "sessions" }],
+      "rails_markup_list_sessions" => ["rails_markup_read", { "resource" => "sessions" }],
+      "rails_markup_session" => ["rails_markup_read", { "resource" => "session" }],
+      "rails_markup_get_session" => ["rails_markup_read", { "resource" => "session" }],
+      "rails_markup_pending" => ["rails_markup_read", { "resource" => "pending" }],
+      "rails_markup_get_pending" => ["rails_markup_read", { "resource" => "pending" }],
+      "rails_markup_get_all_pending" => ["rails_markup_read", { "resource" => "pending" }],
+      "rails_markup_fetch_production" => ["rails_markup_read", { "resource" => "pending", "environment" => "production" }],
+      "rails_markup_watch_annotations" => ["rails_markup_watch", {}],
+      "rails_markup_acknowledge" => ["rails_markup_transition", { "action" => "acknowledge" }],
+      "rails_markup_resolve" => ["rails_markup_transition", { "action" => "resolve" }],
+      "rails_markup_resolve_production" => ["rails_markup_transition", { "action" => "resolve", "environment" => "production" }],
+      "rails_markup_reply_production" => ["rails_markup_reply", { "environment" => "production" }],
+      "rails_markup_dismiss_production" => ["rails_markup_dismiss", { "environment" => "production" }]
+    }
+
+    actual = RailsMarkup::McpServer::LEGACY_ALIASES.transform_values do |adapter|
+      [adapter.fetch(:handler), adapter.fetch(:inject, {})]
+    end
+    assert_equal expected, actual
+  end
+
+  def test_legacy_production_read_never_auto_acknowledges
+    ENV["RAILS_MARKUP_PROD_URL"] = "https://configured.test"
+    ENV["RAILS_MARKUP_PROD_TOKEN"] = "configured-secret"
+    input = StringIO.new(jsonrpc_request(1, "tools/call", {
+      name: "rails_markup_fetch_production", arguments: {}
+    }))
+    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
+    response = Struct.new(:code, :body).new("200", '{"annotations":[{"id":"abc"}]}')
+    response.define_singleton_method(:is_a?) { |klass| klass == Net::HTTPSuccess }
+    patch_calls = []
+    mcp.define_singleton_method(:http_get) { |_url, token: nil| response }
+    mcp.define_singleton_method(:http_patch) { |*args| patch_calls << args }
+
+    capture_stderr { mcp.start }
+    assert_empty patch_calls
+    assert_equal false, parse_output.dig("result", "isError") || false
+  ensure
+    ENV.delete("RAILS_MARKUP_PROD_URL")
+    ENV.delete("RAILS_MARKUP_PROD_TOKEN")
+  end
+
   # ── Sessions (new names) ───────────────────────────────────
 
   def test_sessions_empty
@@ -176,7 +275,7 @@ class McpServerTest < Minitest::Test
 
   def test_dismiss_production_without_url_returns_error
     ann = create_test_annotation
-    result = call_tool("rails_markup_dismiss", annotationId: ann.id, environment: "production")
+    result = call_tool("rails_markup_dismiss", annotationId: ann.id, reason: "not applicable", environment: "production")
     assert_match(/No production URL/, result["error"])
   end
 
@@ -247,7 +346,7 @@ class McpServerTest < Minitest::Test
 
     assert_match(/DEPRECATED/, stderr_output)
     assert_match(/rails_markup_get_all_pending/, stderr_output)
-    assert_match(/rails_markup_pending/, stderr_output)
+    assert_match(/rails_markup_read/, stderr_output)
   end
 
   # ── Unknown tool ───────────────────────────────────────────
@@ -260,8 +359,8 @@ class McpServerTest < Minitest::Test
     mcp.start
 
     response = parse_output
-    assert response["error"]
-    assert_equal(-32602, response["error"]["code"])
+    assert_equal true, response.dig("result", "isError")
+    assert_match(/tools\/list/, response.dig("result", "content", 0, "text"))
   end
 
   # ── Misc ───────────────────────────────────────────────────
@@ -379,12 +478,16 @@ class McpServerTest < Minitest::Test
 
   # Call a tool and return the parsed content
   def call_tool(name, **args)
+    response = call_tool_response(name, **args)
+    JSON.parse(response["result"]["content"].first["text"])
+  end
+
+  def call_tool_response(name, **args)
     @output = StringIO.new
     input = StringIO.new(jsonrpc_request(1, "tools/call", { name: name, arguments: args.transform_keys(&:to_s) }))
     mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
     mcp.start
-    response = parse_output
-    JSON.parse(response["result"]["content"].first["text"])
+    parse_output
   end
 
   def create_test_annotation

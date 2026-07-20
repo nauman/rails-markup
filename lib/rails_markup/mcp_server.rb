@@ -109,18 +109,35 @@ module RailsMarkup
       }
     ].freeze
 
-    # Legacy tool names → new handler + injected args.
+    TOOL_ARGUMENTS = {
+      "rails_markup_read" => %w[resource environment sessionId annotationId],
+      "rails_markup_watch" => %w[sessionId timeoutSeconds batchWindowSeconds],
+      "rails_markup_transition" => %w[action annotationId summary environment],
+      "rails_markup_reply" => %w[annotationId message environment],
+      "rails_markup_dismiss" => %w[annotationId reason environment]
+    }.freeze
+
+    # Legacy tool names → canonical handler + trusted injected args.
     # Removed after v1.3.0.
     LEGACY_ALIASES = {
-      "rails_markup_list_sessions"   => { handler: "rails_markup_sessions" },
-      "rails_markup_get_session"     => { handler: "rails_markup_session" },
-      "rails_markup_get_pending"     => { handler: "rails_markup_pending" },
-      "rails_markup_get_all_pending" => { handler: "rails_markup_pending" },
+      "rails_markup_sessions" => { handler: "rails_markup_read", inject: { "resource" => "sessions" } },
+      "rails_markup_list_sessions" => { handler: "rails_markup_read", inject: { "resource" => "sessions" } },
+      "rails_markup_session" => { handler: "rails_markup_read", inject: { "resource" => "session" } },
+      "rails_markup_get_session" => { handler: "rails_markup_read", inject: { "resource" => "session" } },
+      "rails_markup_pending" => { handler: "rails_markup_read", inject: { "resource" => "pending" } },
+      "rails_markup_get_pending" => { handler: "rails_markup_read", inject: { "resource" => "pending" } },
+      "rails_markup_get_all_pending" => { handler: "rails_markup_read", inject: { "resource" => "pending" } },
+      "rails_markup_fetch_production" => {
+        handler: "rails_markup_read", inject: { "resource" => "pending", "environment" => "production" }
+      },
       "rails_markup_watch_annotations" => { handler: "rails_markup_watch" },
-      "rails_markup_fetch_production"  => { handler: "rails_markup_pending", inject: { "environment" => "production" } },
-      "rails_markup_resolve_production" => { handler: "rails_markup_resolve", inject: { "environment" => "production" } },
-      "rails_markup_dismiss_production" => { handler: "rails_markup_dismiss", inject: { "environment" => "production" } },
-      "rails_markup_reply_production"   => { handler: "rails_markup_reply", inject: { "environment" => "production" } }
+      "rails_markup_acknowledge" => { handler: "rails_markup_transition", inject: { "action" => "acknowledge" } },
+      "rails_markup_resolve" => { handler: "rails_markup_transition", inject: { "action" => "resolve" } },
+      "rails_markup_resolve_production" => {
+        handler: "rails_markup_transition", inject: { "action" => "resolve", "environment" => "production" }
+      },
+      "rails_markup_reply_production" => { handler: "rails_markup_reply", inject: { "environment" => "production" } },
+      "rails_markup_dismiss_production" => { handler: "rails_markup_dismiss", inject: { "environment" => "production" } }
     }.freeze
 
     def initialize(store:, input: $stdin, output: $stdout, dir: Dir.pwd)
@@ -203,85 +220,81 @@ module RailsMarkup
     end
 
     def handle_tool_call(id, name, args)
-      # Resolve legacy aliases
       if (legacy = LEGACY_ALIASES[name])
+        allowed = TOOL_ARGUMENTS.fetch(legacy[:handler]) - legacy.fetch(:inject, {}).keys
+        return invalid_arguments_response(id, args.keys - allowed) unless (args.keys - allowed).empty?
+
         $stderr.puts "[rails-markup] DEPRECATED: #{name} → use #{legacy[:handler]}"
         name = legacy[:handler]
-        args = args.merge(legacy[:inject]) if legacy[:inject]
+        args = args.merge(legacy.fetch(:inject, {}))
       end
 
-      env = args["environment"] || "development"
-      production = env == "production"
+      return tool_error_response(id, "Unknown tool. Use tools/list for supported tools.") unless TOOL_ARGUMENTS.key?(name)
+
+      unknown = args.keys - TOOL_ARGUMENTS.fetch(name)
+      return invalid_arguments_response(id, unknown) unless unknown.empty?
+
+      if (message = validation_error(name, args))
+        return tool_error_response(id, message)
+      end
 
       result = case name
-               when "rails_markup_sessions"
-                 handle_local_or_proxy(:list_sessions, args) {
-                   sessions = @store.list_sessions
-                   sessions.map { |s| @store.serialize_session(s) }
-                 }
-               when "rails_markup_session"
-                 handle_local_or_proxy(:get_session, args) {
-                   session = @store.get_session(args["sessionId"])
-                   session ? @store.serialize_session(session) : { error: "Session not found" }
-                 }
-               when "rails_markup_pending"
-                 if production
-                   handle_fetch_production(args)
-                 elsif args["sessionId"]
-                   handle_local_or_proxy(:get_pending, args) {
-                     pending = @store.pending_for_session(args["sessionId"])
-                     pending.map { |a| @store.serialize_annotation(a) }
-                   }
-                 else
-                   handle_local_or_proxy(:get_all_pending, args) {
-                     pending = @store.all_pending
-                     pending.map { |a| @store.serialize_annotation(a) }
-                   }
-                 end
+               when "rails_markup_read"
+                 handle_read(args)
                when "rails_markup_watch"
                  handle_watch(args)
-               when "rails_markup_acknowledge"
-                 if production
-                   handle_production_action(args, "acknowledge")
+               when "rails_markup_transition"
+                 if args["action"] == "acknowledge"
+                   handle_action(args, "acknowledge")
                  else
-                   handle_local_or_proxy(:acknowledge, args) {
-                     ann = @store.acknowledge(args["annotationId"])
-                     ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
-                   }
-                 end
-               when "rails_markup_resolve"
-                 if production
-                   handle_production_action(args, "resolve", summary: args["summary"])
-                 else
-                   handle_local_or_proxy(:resolve, args) {
-                     ann = @store.resolve(args["annotationId"], summary: args["summary"])
-                     ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
-                   }
+                   handle_action(args, "resolve", summary: args["summary"])
                  end
                when "rails_markup_dismiss"
-                 if production
-                   handle_production_action(args, "dismiss", reason: args["reason"])
-                 else
-                   handle_local_or_proxy(:dismiss, args) {
-                     ann = @store.dismiss(args["annotationId"], reason: args["reason"])
-                     ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
-                   }
-                 end
+                 handle_action(args, "dismiss", reason: args["reason"])
                when "rails_markup_reply"
-                 if production
-                   handle_production_action(args, "reply", message: args["message"])
-                 else
-                   handle_local_or_proxy(:reply, args) {
-                     ann = @store.reply(args["annotationId"], message: args["message"])
-                     ann ? @store.serialize_annotation(ann) : { error: "Annotation not found" }
-                   }
-                 end
-               else
-                 return error_response(id, -32602, "Unknown tool: #{name}")
+                 handle_action(args, "reply", message: args["message"])
                end
 
       content = [{ type: "text", text: result.to_json }]
       result_response(id, { content: content })
+    end
+
+    def validation_error(name, args)
+      environment = args["environment"] || "development"
+      return "environment must be development or production." unless %w[development production].include?(environment)
+
+      case name
+      when "rails_markup_read"
+        resource = args["resource"]
+        return "resource must be pending, sessions, session, or annotation." unless %w[pending sessions session annotation].include?(resource)
+        return "sessionId is required when resource is session." if resource == "session" && blank?(args["sessionId"])
+        return "annotationId is required when resource is annotation." if resource == "annotation" && blank?(args["annotationId"])
+        return "annotationId is only valid when resource is annotation." if resource != "annotation" && args.key?("annotationId")
+        return "sessionId is only valid for pending or session resources." if !%w[pending session].include?(resource) && args.key?("sessionId")
+      when "rails_markup_transition"
+        return "action must be acknowledge or resolve." unless %w[acknowledge resolve].include?(args["action"])
+        return "annotationId is required." if blank?(args["annotationId"])
+        return "summary is only valid for resolve." if args["action"] != "resolve" && args.key?("summary")
+      when "rails_markup_reply"
+        return "annotationId and message are required." if blank?(args["annotationId"]) || blank?(args["message"])
+      when "rails_markup_dismiss"
+        return "annotationId and reason are required." if blank?(args["annotationId"]) || blank?(args["reason"])
+      end
+    end
+
+    def blank?(value)
+      value.nil? || (value.respond_to?(:empty?) && value.empty?)
+    end
+
+    def invalid_arguments_response(id, unknown)
+      tool_error_response(id, "Remove unsupported arguments: #{unknown.sort.join(', ')}.")
+    end
+
+    def tool_error_response(id, message)
+      result_response(id, {
+        content: [{ type: "text", text: { error: message }.to_json }],
+        isError: true
+      })
     end
 
     # ── Dev API proxy ─────────────────────────────────────────
@@ -290,6 +303,44 @@ module RailsMarkup
 
     def dev_url
       config_value("RAILS_MARKUP_DEV_URL")
+    end
+
+    def handle_read(args)
+      return handle_fetch_production(args) if args["environment"] == "production" && args["resource"] == "pending"
+
+      case args["resource"]
+      when "sessions"
+        handle_local_or_proxy(:list_sessions, args) do
+          @store.list_sessions.map { |session| @store.serialize_session(session) }
+        end
+      when "session"
+        handle_local_or_proxy(:get_session, args) do
+          session = @store.get_session(args["sessionId"])
+          session ? @store.serialize_session(session) : { error: "Session not found" }
+        end
+      when "annotation"
+        annotation = @store.get_annotation(args["annotationId"])
+        annotation ? @store.serialize_annotation(annotation) : { error: "Annotation not found" }
+      when "pending"
+        action = args["sessionId"] ? :get_pending : :get_all_pending
+        handle_local_or_proxy(action, args) do
+          pending = if args["sessionId"]
+                      @store.pending_for_session(args["sessionId"])
+                    else
+                      @store.all_pending
+                    end
+          pending.map { |annotation| @store.serialize_annotation(annotation) }
+        end
+      end
+    end
+
+    def handle_action(args, action, **params)
+      return handle_production_action(args, action, **params) if args["environment"] == "production"
+
+      handle_local_or_proxy(action.to_sym, args) do
+        annotation = @store.public_send(action, args["annotationId"], **params)
+        annotation ? @store.serialize_annotation(annotation) : { error: "Annotation not found" }
+      end
     end
 
     def handle_local_or_proxy(action, args, &fallback)
@@ -335,11 +386,10 @@ module RailsMarkup
     # ── Production API ────────────────────────────────────────
 
     def handle_fetch_production(args)
-      base = args["baseUrl"] || prod_url
-      token = args["token"] || prod_token
+      base = prod_url
+      token = prod_token
       return { error: "No production URL. Run: bin/markup configure --prod-url=URL" } unless base
 
-      mark_acknowledged = args["markAcknowledged"] != false
       api = external_api_base(base)
 
       resp = http_get("#{api}/pending", token: token)
@@ -348,18 +398,12 @@ module RailsMarkup
       data = JSON.parse(resp.body)
       annotations = data["annotations"] || []
 
-      if mark_acknowledged && annotations.any?
-        annotations.each do |ann|
-          http_patch("#{api}/#{ann["id"]}/acknowledge", token: token)
-        end
-      end
-
       { count: annotations.size, annotations: annotations }
     end
 
     def handle_production_action(args, action, **params)
-      base = args["baseUrl"] || prod_url
-      token = args["token"] || prod_token
+      base = prod_url
+      token = prod_token
       annotation_id = args["annotationId"]
       return { error: "No production URL. Run: bin/markup configure --prod-url=URL" } unless base
       return { error: "No annotationId provided." } unless annotation_id
