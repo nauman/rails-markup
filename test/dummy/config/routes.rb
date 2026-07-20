@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
 Rails.application.routes.draw do
+  resource :rails_markup_test_session,
+    only: %i[new create],
+    controller: "rails_markup_test_sessions"
+
   mount RailsMarkup::Engine, at: "/feedback"
 
   # Host pages for system tests (toolbar overlay is injected here).

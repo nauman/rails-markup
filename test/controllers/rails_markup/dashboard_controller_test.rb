@@ -4,6 +4,18 @@ require_relative "../../engine_test_helper"
 
 module RailsMarkup
   class DashboardControllerTest < ActionDispatch::IntegrationTest
+    setup do
+      authenticate_rails_markup_admin
+    end
+
+    test "unauthenticated dashboard is rejected" do
+      reset!
+
+      get rails_markup.root_path
+
+      assert_redirected_to "/rails_markup_test_session"
+    end
+
     # --- Index ---
 
     test "index renders annotations" do

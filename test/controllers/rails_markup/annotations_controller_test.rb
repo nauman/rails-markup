@@ -4,6 +4,47 @@ require_relative "../../engine_test_helper"
 
 module RailsMarkup
   class AnnotationsControllerTest < ActionDispatch::IntegrationTest
+    setup do
+      @csrf_token = authenticate_rails_markup_admin
+    end
+
+    test "unauthenticated health is rejected" do
+      reset!
+
+      get health_path, as: :json
+
+      assert_redirected_to "/rails_markup_test_session"
+    end
+
+    test "unauthenticated mutation is rejected" do
+      reset!
+
+      assert_no_difference "Annotation.count" do
+        post session_annotations_path("test-session"), params: { content: "Blocked" }, as: :json
+      end
+
+      assert_redirected_to "/rails_markup_test_session"
+    end
+
+    test "authenticated mutation without csrf is rejected" do
+      with_forgery_protection do
+        assert_raises ActionController::InvalidAuthenticityToken do
+          post session_annotations_path("test-session"), params: { content: "Blocked" }, as: :json
+        end
+      end
+    end
+
+    test "authenticated mutation with valid csrf succeeds" do
+      with_forgery_protection do
+        post session_annotations_path("test-session"),
+          params: { content: "Accepted" },
+          headers: { "X-CSRF-Token" => @csrf_token },
+          as: :json
+
+        assert_response :created
+      end
+    end
+
     # --- Session ---
 
     test "create_session returns prefixed id" do
@@ -193,6 +234,14 @@ module RailsMarkup
     end
 
     private
+
+    def with_forgery_protection
+      original = ActionController::Base.allow_forgery_protection
+      ActionController::Base.allow_forgery_protection = true
+      yield
+    ensure
+      ActionController::Base.allow_forgery_protection = original
+    end
 
     # Named route helpers for the engine's API endpoints
     def sessions_path

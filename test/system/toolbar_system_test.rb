@@ -3,6 +3,10 @@
 require_relative "../application_system_test_case"
 
 class ToolbarSystemTest < ApplicationSystemTestCase
+  setup do
+    authenticate_rails_markup_admin
+  end
+
   test "injected FAB renders and toggles the panel on a host page" do
     visit "/host"
 

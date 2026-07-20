@@ -26,6 +26,13 @@ end
 class ActionDispatch::IntegrationTest
   include RailsMarkup::Engine.routes.url_helpers
 
+  def authenticate_rails_markup_admin
+    get "/rails_markup_test_session/new"
+    token = response.body.match(/name="authenticity_token" value="([^"]+)"/).captures.first
+    post "/rails_markup_test_session", params: { authenticity_token: token }
+    token
+  end
+
   def default_url_options
     { host: "test.host" }
   end

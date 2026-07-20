@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 module RailsMarkup
-  class AnnotationsController < ApplicationController
-    protect_from_forgery with: :null_session
+  class AnnotationsController < RailsMarkup.config.base_controller_class.constantize
+    protect_from_forgery with: :exception
 
     before_action :set_annotation, only: %i[acknowledge resolve dismiss reply]
 

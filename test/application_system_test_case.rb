@@ -41,6 +41,11 @@ class ApplicationSystemTestCase < ActiveSupport::TestCase
   # test data — clean up explicitly instead.
   self.use_transactional_tests = false
 
+  def authenticate_rails_markup_admin
+    visit "/rails_markup_test_session/new"
+    click_button "Authenticate"
+  end
+
   teardown do
     RailsMarkup::Annotation.delete_all
     Capybara.reset_sessions!
