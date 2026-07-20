@@ -212,6 +212,32 @@ test("legacy migration retains source keys when consolidated persistence fails",
   assert.equal(harness.storageDocument().annotations.length, 0);
 });
 
+test("legacy cleanup retries idempotently when one source key cannot be removed", (t) => {
+  const harness = createToolbarHarness({
+    uuids: [uuidA, uuidB],
+    storage: {
+      "rm-annotations": { annotations: [], nextId: 1, outbox: {} },
+      "rm-annotations:/one": { annotations: [{ id: 1, comment: "One", pathname: "/one" }] },
+      "rm-annotations:/two": { annotations: [{ id: 1, comment: "Two", pathname: "/two" }] }
+    }
+  });
+  t.after(() => harness.reset());
+  harness.failNextStorageRemoval("rm-annotations:/one", new Error("remove denied"));
+
+  harness.toolbar._loadFromStorage();
+
+  assert.notEqual(harness.window.localStorage.getItem("rm-annotations:/one"), null);
+  assert.equal(harness.window.localStorage.getItem("rm-annotations:/two"), null);
+  assert.equal(harness.toolbar.annotations.length, 2);
+
+  harness.toolbar._loadFromStorage();
+  harness.toolbar._loadFromStorage();
+
+  assert.equal(harness.window.localStorage.getItem("rm-annotations:/one"), null);
+  assert.deepEqual(Array.from(harness.toolbar.annotations, annotation => annotation.comment).sort(), ["One", "Two"]);
+  assert.deepEqual(Object.keys(harness.toolbar.outbox).sort(), [uuidA, uuidB]);
+});
+
 test("duplicate client IDs collapse to the deterministically newest local record", (t) => {
   const harness = createToolbarHarness({
     storage: {
@@ -235,6 +261,46 @@ test("duplicate client IDs collapse to the deterministically newest local record
   assert.equal(harness.toolbar.annotations.find((annotation) => annotation.clientId === uuidA).comment, "new-stable-winner");
   assert.equal(harness.toolbar.annotations.find((annotation) => annotation.clientId === uuidB).comment, "unrelated");
   assert.equal(new Set(harness.toolbar.annotations.map((annotation) => annotation.id)).size, 2);
+});
+
+test("equal local update times use later array order instead of server time", (t) => {
+  const harness = createToolbarHarness({
+    storage: {
+      "rm-annotations": {
+        annotations: [
+          { id: 1, clientId: uuidA, comment: "earlier array", updatedAt: "2026-03-01T00:00:00Z", serverUpdatedAt: "2026-04-01T00:00:00Z" },
+          { id: 2, clientId: uuidA, comment: "later array", updatedAt: "2026-03-01T00:00:00Z", serverUpdatedAt: "2026-02-01T00:00:00Z" }
+        ],
+        nextId: 3,
+        outbox: {}
+      }
+    }
+  });
+  t.after(() => harness.reset());
+
+  harness.toolbar._loadFromStorage();
+
+  assert.equal(harness.toolbar.annotations.length, 1);
+  assert.equal(harness.toolbar.annotations[0].comment, "later array");
+});
+
+test("malformed persisted annotation collections reset to safe empty state", () => {
+  for (const malformedAnnotations of ["not-an-array", { unexpected: true }]) {
+    const harness = createToolbarHarness({
+      storage: {
+        "rm-annotations": { annotations: malformedAnnotations, nextId: 99, outbox: ["unsafe"] }
+      }
+    });
+
+    harness.toolbar._injectDOM();
+    harness.toolbar._loadFromStorage();
+
+    assert.deepEqual(Array.from(harness.toolbar.annotations), []);
+    assert.equal(Array.isArray(harness.toolbar.outbox), false);
+    assert.deepEqual(Object.keys(harness.toolbar.outbox), []);
+    assert.doesNotThrow(() => harness.toolbar._renderPins());
+    harness.reset();
+  }
 });
 
 test("server-only records receive stable collision-free display IDs across reload", (t) => {

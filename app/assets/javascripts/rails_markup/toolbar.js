@@ -14,6 +14,7 @@
     // State
     annotations: [],
     outbox: {},
+    legacyMigrations: {},
     nextId: 1,
     active: false,
     serverOnline: false,
@@ -958,7 +959,12 @@
     _saveToStorage() {
       try {
         // Save all annotations to a single global key
-        localStorage.setItem(this._storageKey(), JSON.stringify({ annotations: this.annotations, nextId: this.nextId, outbox: this.outbox }));
+        localStorage.setItem(this._storageKey(), JSON.stringify({
+          annotations: this.annotations,
+          nextId: this.nextId,
+          outbox: this.outbox,
+          legacyMigrations: this.legacyMigrations
+        }));
         return true;
       }
       catch (e) {
@@ -973,16 +979,19 @@
         let raw = localStorage.getItem(this._storageKey());
         if (raw) {
           const data = JSON.parse(raw);
-          if (data.annotations) {
-            this.annotations = data.annotations;
-            this.nextId = data.nextId || (this.annotations.length + 1);
-          }
-          this.outbox = data.outbox && typeof data.outbox === "object" ? data.outbox : {};
+          const validDocument = data && typeof data === "object" && !Array.isArray(data);
+          this.annotations = validDocument && Array.isArray(data.annotations) ? data.annotations : [];
+          this.nextId = validDocument && Number.isInteger(data.nextId) && data.nextId > 0 ? data.nextId : (this.annotations.length + 1);
+          this.outbox = validDocument && data.outbox && typeof data.outbox === "object" && !Array.isArray(data.outbox) ? data.outbox : {};
+          this.legacyMigrations = validDocument && data.legacyMigrations && typeof data.legacyMigrations === "object" && !Array.isArray(data.legacyMigrations)
+            ? data.legacyMigrations
+            : {};
         }
         // Migrate any old per-page annotations into global store
         const migratedKeys = this._migratePageAnnotations();
         this._normalizeStoredState();
-        if (this._saveToStorage()) migratedKeys.forEach(key => localStorage.removeItem(key));
+        this._recordLegacyMigrations();
+        if (this._saveToStorage()) this._cleanupMigratedKeys(migratedKeys);
         this._rebuildList();
         this._updateCount();
       } catch (e) { console.warn("[rails-markup] load failed:", e); }
@@ -999,7 +1008,10 @@
           try {
             const data = JSON.parse(localStorage.getItem(key));
             if (data && Array.isArray(data.annotations)) {
-              data.annotations.forEach(a => {
+              data.annotations.forEach((a, index) => {
+                const fingerprint = this._legacyMigrationFingerprint(key, index, a);
+                if (this._validClientId(this.legacyMigrations[fingerprint])) a.clientId = this.legacyMigrations[fingerprint];
+                Object.defineProperty(a, "_legacyMigrationFingerprint", { configurable: true, value: fingerprint });
                 // Legacy ids were per-page counters, so different pages can reuse
                 // the same id. Reassign a fresh id on collision instead of
                 // dropping the annotation (which silently lost data).
@@ -1014,6 +1026,28 @@
         }
       }
       return migratedKeys;
+    },
+
+    _legacyMigrationFingerprint(key, index, annotation) {
+      const input = `${key}\u0000${index}\u0000${JSON.stringify(annotation)}`;
+      let hash = 2166136261;
+      for (let i = 0; i < input.length; i++) hash = Math.imul(hash ^ input.charCodeAt(i), 16777619);
+      return `${key}:${index}:${(hash >>> 0).toString(16)}`;
+    },
+
+    _recordLegacyMigrations() {
+      this.annotations.forEach(annotation => {
+        if (!annotation._legacyMigrationFingerprint) return;
+        this.legacyMigrations[annotation._legacyMigrationFingerprint] = annotation.clientId;
+        delete annotation._legacyMigrationFingerprint;
+      });
+    },
+
+    _cleanupMigratedKeys(keys) {
+      keys.forEach(key => {
+        try { localStorage.removeItem(key); }
+        catch (e) { console.warn("[rails-markup] legacy cleanup failed:", e); }
+      });
     },
 
     _normalizeStoredState() {
@@ -1074,10 +1108,6 @@
       const candidateUpdatedAt = timestamp(candidate.annotation.updatedAt || candidate.annotation.updated_at);
       const currentUpdatedAt = timestamp(current.annotation.updatedAt || current.annotation.updated_at);
       if (candidateUpdatedAt !== currentUpdatedAt) return candidateUpdatedAt > currentUpdatedAt;
-
-      const candidateServerUpdatedAt = timestamp(candidate.annotation.serverUpdatedAt || candidate.annotation.server_updated_at);
-      const currentServerUpdatedAt = timestamp(current.annotation.serverUpdatedAt || current.annotation.server_updated_at);
-      if (candidateServerUpdatedAt !== currentServerUpdatedAt) return candidateServerUpdatedAt > currentServerUpdatedAt;
       return candidate.index > current.index;
     },
 

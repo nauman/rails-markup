@@ -16,6 +16,7 @@ export function createToolbarHarness(options = {}) {
   let uuidIndex = 0;
   let online = options.online !== false;
   let nextStorageWriteError = null;
+  let nextStorageRemovalFailure = null;
   const uuids = options.uuids || [];
   const fetch = options.fetch || createFakeFetch();
 
@@ -55,6 +56,18 @@ export function createToolbarHarness(options = {}) {
         throw error;
       }
       setStorageItem(key, value);
+    }
+  });
+  const removeStorageItem = window.localStorage.removeItem.bind(window.localStorage);
+  Object.defineProperty(window.localStorage, "removeItem", {
+    configurable: true,
+    value(key) {
+      if (nextStorageRemovalFailure?.key === key) {
+        const error = nextStorageRemovalFailure.error;
+        nextStorageRemovalFailure = null;
+        throw error;
+      }
+      removeStorageItem(key);
     }
   });
 
@@ -102,6 +115,9 @@ export function createToolbarHarness(options = {}) {
     },
     failNextStorageWrite(error = new Error("localStorage write failed")) {
       nextStorageWriteError = error;
+    },
+    failNextStorageRemoval(key, error = new Error("localStorage removal failed")) {
+      nextStorageRemovalFailure = { key, error };
     },
     storageDocument() {
       return JSON.parse(window.localStorage.getItem("rm-annotations"));
