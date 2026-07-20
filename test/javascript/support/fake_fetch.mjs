@@ -5,7 +5,9 @@ export function createFakeFetch() {
   const response = (body = {}, options = {}) => {
     const status = options.status ?? 200;
     const headers = new Headers(options.headers || { "Content-Type": "application/json" });
-    const responseBody = status === 204 || status === 205 ? null : JSON.stringify(body);
+    const responseBody = status === 204 || status === 205
+      ? null
+      : (options.rawBody ? String(body) : JSON.stringify(body));
     return new Response(responseBody, { status, headers });
   };
 

@@ -30,6 +30,15 @@
     _storageError: null,
     _outboxFlushScheduled: false,
     _outboxFlushTimer: null,
+    _flushPromise: null,
+    _healthPromise: null,
+    _syncRetryTimer: null,
+    _syncRetryAttempt: 0,
+    _syncRetryDelay: 0,
+    _syncBaseRetryDelay: 1000,
+    _syncMaxRetryDelay: 30000,
+    _syncMalformedLimit: 3,
+    _syncUnavailable: null,
 
     // Drawing state
     drawingMode: null,      // null | "arrow" | "rect" | "highlight"
@@ -81,6 +90,10 @@
         this._boundVisibilityChange = () => this._onVisibilityChange();
         document.addEventListener("visibilitychange", this._boundVisibilityChange);
       }
+      if (!this._boundOnline) {
+        this._boundOnline = () => this._onOnline();
+        window.addEventListener("online", this._boundOnline);
+      }
       this._renderPins();
       this._updateCount();
       if (previousPageUrl && previousPageUrl !== this._currentPageUrl && this.serverOnline) this._initSession();
@@ -91,10 +104,15 @@
       if (this.sseSource) { this.sseSource.close(); this.sseSource = null; }
       if (this.healthInterval) { clearInterval(this.healthInterval); this.healthInterval = null; }
       if (this._outboxFlushTimer) { clearTimeout(this._outboxFlushTimer); this._outboxFlushTimer = null; }
+      if (this._syncRetryTimer) { clearTimeout(this._syncRetryTimer); this._syncRetryTimer = null; }
       this._outboxFlushScheduled = false;
       if (this._boundVisibilityChange) {
         document.removeEventListener("visibilitychange", this._boundVisibilityChange);
         this._boundVisibilityChange = null;
+      }
+      if (this._boundOnline) {
+        window.removeEventListener("online", this._boundOnline);
+        this._boundOnline = null;
       }
       if (this._onResize) window.removeEventListener("resize", this._onResize);
       if (this._onScroll) window.removeEventListener("scroll", this._onScroll);
@@ -1116,8 +1134,214 @@
       }, 0);
     },
 
-    // Task 3C owns transport. Mutations and manual retries schedule this seam only.
-    _flushOutbox() {},
+    _flushOutbox() {
+      if (this._flushPromise) return this._flushPromise;
+      if (!navigator.onLine || !this.serverOnline) return Promise.resolve();
+      if (this._syncRetryTimer) return Promise.resolve();
+
+      this._flushPromise = this._runOutboxFlush().finally(() => {
+        this._flushPromise = null;
+      });
+      return this._flushPromise;
+    },
+
+    async _runOutboxFlush() {
+      const clientIds = Object.keys(this.outbox);
+      for (const clientId of clientIds) {
+        const current = this.outbox[clientId];
+        if (!current || current.syncState === "failed") continue;
+
+        const snapshot = this._immutableCopy(current);
+        let result;
+        try {
+          result = await this._sendOutboxEntry(snapshot);
+        } catch (error) {
+          result = { kind: "retryable", error };
+        }
+
+        if (result.kind === "success") {
+          if (!this._outboxEntryMatches(snapshot)) {
+            clientIds.push(clientId);
+            continue;
+          }
+          this._handleSyncSuccess(snapshot, result.data);
+          this._resetSyncRetry();
+          continue;
+        }
+        if (result.kind === "auth") {
+          this._setSyncUnavailable(result.message || "Authentication required");
+          break;
+        }
+        if (result.kind === "terminal") {
+          if (!this._outboxEntryMatches(snapshot)) {
+            clientIds.push(clientId);
+            continue;
+          }
+          this._markSyncFailed(snapshot);
+          continue;
+        }
+        if (result.kind === "malformed") {
+          if (!this._outboxEntryMatches(snapshot)) {
+            clientIds.push(clientId);
+            continue;
+          }
+          if (this._recordMalformedResponse(snapshot)) continue;
+          break;
+        }
+
+        this.serverOnline = false;
+        this._updateStatus();
+        this._scheduleSyncRetry(result.retryAfter);
+        break;
+      }
+    },
+
+    async _sendOutboxEntry(snapshot) {
+      const headers = { "Content-Type": "application/json", "Accept": "application/json" };
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+      if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+      const options = {
+        method: snapshot.type === "delete" ? "DELETE" : "PUT",
+        headers,
+        credentials: "same-origin",
+        redirect: "manual",
+        signal: AbortSignal.timeout(5000)
+      };
+      if (snapshot.type === "upsert") {
+        options.body = JSON.stringify(Object.assign({}, snapshot.annotation, { dirtyFields: snapshot.dirtyFields || [] }));
+      }
+
+      const response = await fetch(`${this.endpoint}/annotations/${encodeURIComponent(snapshot.clientId)}`, options);
+      return this._classifySyncResponse(snapshot, response);
+    },
+
+    async _classifySyncResponse(snapshot, response) {
+      const status = response.status;
+      if (status >= 300 && status < 400) return { kind: "auth", message: "Authentication required" };
+      if (status === 401 || status === 403 || response.type === "opaqueredirect") {
+        return { kind: "auth", message: "Authentication required" };
+      }
+      if ([408, 425, 429].includes(status) || status >= 500) {
+        return { kind: "retryable", retryAfter: this._retryAfterDelay(response) };
+      }
+      if (status >= 400) return { kind: "terminal" };
+      if (!response.ok) return { kind: "retryable" };
+      if (snapshot.type === "delete") return { kind: "success", data: null };
+
+      const contentType = response.headers.get("Content-Type") || "";
+      if (!contentType.toLowerCase().includes("application/json")) {
+        return { kind: "auth", message: "Sync unavailable: expected JSON" };
+      }
+
+      try {
+        const data = await response.json();
+        if (!data || typeof data !== "object" || Array.isArray(data)) return { kind: "malformed" };
+        return { kind: "success", data };
+      } catch {
+        return { kind: "malformed" };
+      }
+    },
+
+    _handleSyncSuccess(snapshot, data) {
+      if (!this._outboxEntryMatches(snapshot)) return;
+      this._commitLocalStateChange(() => {
+        if (!this._outboxEntryMatches(snapshot)) return;
+        if (snapshot.type === "upsert") {
+          const annotation = this.annotations.find(candidate => candidate.clientId === snapshot.clientId);
+          if (annotation) this._mergeSuccessfulUpsert(annotation, data, snapshot.dirtyFields || []);
+        }
+        delete this.outbox[snapshot.clientId];
+      });
+      this._renderPins();
+      this._rebuildList();
+      this._updateCount();
+    },
+
+    _mergeSuccessfulUpsert(annotation, server, sentDirtyFields) {
+      annotation.serverId = server.id;
+      annotation.serverUpdatedAt = server.updatedAt || annotation.serverUpdatedAt;
+      annotation.comment = server.content;
+      annotation.intent = server.intent;
+      annotation.severity = server.severity;
+      annotation.status = server.status;
+      annotation.selectedText = server.selectedText;
+      annotation.element = server.target || {};
+      annotation.metadata = server.metadata || {};
+      annotation.thread = server.thread || [];
+      annotation.pageUrl = server.pageUrl || annotation.pageUrl;
+      annotation.pathname = server.pageUrl || annotation.pathname;
+      annotation.dirtyFields = (annotation.dirtyFields || []).filter(field => !sentDirtyFields.includes(field));
+      annotation.syncState = "synced";
+    },
+
+    _markSyncFailed(snapshot) {
+      if (!this._outboxEntryMatches(snapshot)) return;
+      this._commitLocalStateChange(() => {
+        const entry = this.outbox[snapshot.clientId];
+        if (!entry || !this._outboxEntryMatches(snapshot)) return;
+        entry.syncState = "failed";
+        const annotation = this.annotations.find(candidate => candidate.clientId === snapshot.clientId);
+        if (annotation) annotation.syncState = "failed";
+      });
+      this._rebuildList();
+    },
+
+    _recordMalformedResponse(snapshot) {
+      if (!this._outboxEntryMatches(snapshot)) return true;
+      const attempts = (this.outbox[snapshot.clientId].malformedAttempts || 0) + 1;
+      if (attempts >= this._syncMalformedLimit) {
+        this._markSyncFailed(snapshot);
+        return true;
+      }
+      this._commitLocalStateChange(() => {
+        if (this._outboxEntryMatches(snapshot)) this.outbox[snapshot.clientId].malformedAttempts = attempts;
+      });
+      this._scheduleSyncRetry();
+      return false;
+    },
+
+    _outboxEntryMatches(snapshot) {
+      const current = this.outbox[snapshot.clientId];
+      return Boolean(current) && JSON.stringify(current) === JSON.stringify(snapshot);
+    },
+
+    _immutableCopy(value) {
+      return JSON.parse(JSON.stringify(value));
+    },
+
+    _retryAfterDelay(response) {
+      const value = response.headers.get("Retry-After");
+      if (!value) return null;
+      const seconds = Number(value);
+      const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(value) - Date.now();
+      if (!Number.isFinite(delay)) return null;
+      return Math.min(this._syncMaxRetryDelay, Math.max(0, delay));
+    },
+
+    _scheduleSyncRetry(requestedDelay) {
+      if (this._syncRetryTimer) return;
+      this._syncRetryAttempt += 1;
+      const exponential = this._syncBaseRetryDelay * (2 ** (this._syncRetryAttempt - 1));
+      this._syncRetryDelay = Math.min(this._syncMaxRetryDelay, requestedDelay ?? exponential);
+      this._syncRetryTimer = setTimeout(async () => {
+        this._syncRetryTimer = null;
+        await this._checkHealth();
+      }, this._syncRetryDelay);
+    },
+
+    _resetSyncRetry() {
+      this._syncRetryAttempt = 0;
+      this._syncRetryDelay = 0;
+      if (this._syncRetryTimer) clearTimeout(this._syncRetryTimer);
+      this._syncRetryTimer = null;
+      this._syncUnavailable = null;
+    },
+
+    _setSyncUnavailable(message) {
+      this.serverOnline = false;
+      this._syncUnavailable = message;
+      this._updateStatus();
+    },
 
     _retrySync(clientId) {
       const entry = this.outbox[clientId];
@@ -1382,13 +1606,24 @@
       }
     },
 
-    async _checkHealth() {
+    _onOnline() {
+      return this._checkHealth();
+    },
+
+    _checkHealth() {
+      if (this._healthPromise) return this._healthPromise;
+      this._healthPromise = this._runHealthCheck().finally(() => { this._healthPromise = null; });
+      return this._healthPromise;
+    },
+
+    async _runHealthCheck() {
       try {
         const resp = await fetch(this.endpoint + "/health", { signal: AbortSignal.timeout(3000) });
         const was = this.serverOnline;
         this.serverOnline = resp.ok;
         this._updateStatus();
         if (!was && this.serverOnline) await this._initSession();
+        if (this.serverOnline) await this._flushOutbox();
       } catch {
         this.serverOnline = false;
         this._updateStatus();
@@ -1446,7 +1681,7 @@
         dot.style.background = this.serverOnline ? "#4ade80" : "#d1d5db";
         dot.style.boxShadow = this.serverOnline ? "0 0 0 2px rgba(74,222,128,0.2)" : "";
       }
-      if (text) text.textContent = this.serverOnline ? "Connected" : "Offline";
+      if (text) text.textContent = this.serverOnline ? "Connected" : (this._syncUnavailable || "Offline");
     },
 
     // ---- Screenshot capture ----
