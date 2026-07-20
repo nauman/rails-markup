@@ -1197,12 +1197,12 @@
     },
 
     async _sendOutboxEntry(snapshot) {
-      const headers = { "Content-Type": "application/json", "Accept": "application/json" };
-      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-      if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+      const request = this._sameOriginMutationRequest(`/annotations/${encodeURIComponent(snapshot.clientId)}`);
+      if (!request) return { kind: "auth", message: "Sync unavailable: endpoint must be same-origin" };
+
       const options = {
         method: snapshot.type === "delete" ? "DELETE" : "PUT",
-        headers,
+        headers: request.headers,
         credentials: "same-origin",
         redirect: "manual",
         signal: AbortSignal.timeout(5000)
@@ -1211,8 +1211,30 @@
         options.body = JSON.stringify(Object.assign({}, snapshot.annotation, { dirtyFields: snapshot.dirtyFields || [] }));
       }
 
-      const response = await fetch(`${this.endpoint}/annotations/${encodeURIComponent(snapshot.clientId)}`, options);
+      const response = await fetch(request.url, options);
       return this._classifySyncResponse(snapshot, response);
+    },
+
+    _sameOriginMutationRequest(path) {
+      const url = this._sameOriginEndpointUrl(path);
+      if (!url) return null;
+      const headers = { "Content-Type": "application/json", "Accept": "application/json" };
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+      if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+      return { url, headers };
+    },
+
+    _sameOriginEndpointUrl(path) {
+      try {
+        const rawUrl = `${this.endpoint.replace(/\/$/, "")}/${String(path).replace(/^\//, "")}`;
+        const resolved = new URL(rawUrl, window.location.href);
+        if (resolved.origin !== window.location.origin) return null;
+        return this.endpoint.startsWith("/") && !this.endpoint.startsWith("//")
+          ? resolved.pathname + resolved.search
+          : resolved.href;
+      } catch {
+        return null;
+      }
     },
 
     async _classifySyncResponse(snapshot, response) {
@@ -1235,11 +1257,43 @@
 
       try {
         const data = await response.json();
-        if (!data || typeof data !== "object" || Array.isArray(data)) return { kind: "malformed" };
+        if (!this._validServerAnnotation(data, snapshot.clientId)) return { kind: "malformed" };
         return { kind: "success", data };
       } catch {
         return { kind: "malformed" };
       }
+    },
+
+    _validServerAnnotation(data, expectedClientId) {
+      if (!this._plainObject(data)) return false;
+      const required = [
+        "id", "clientId", "userId", "authorName", "content", "intent", "severity",
+        "status", "selectedText", "pageUrl", "target", "metadata", "thread",
+        "createdAt", "updatedAt"
+      ];
+      if (!required.every(key => Object.prototype.hasOwnProperty.call(data, key))) return false;
+      if (typeof data.id !== "string" || data.id.length === 0) return false;
+      if (data.clientId !== expectedClientId) return false;
+      if (!(data.userId === null || Number.isInteger(data.userId))) return false;
+      if (!(data.authorName === null || typeof data.authorName === "string")) return false;
+      if (typeof data.content !== "string") return false;
+      if (!["fix", "change", "question", "approve"].includes(data.intent)) return false;
+      if (!["suggestion", "important", "blocking"].includes(data.severity)) return false;
+      if (!["pending", "acknowledged", "resolved", "dismissed"].includes(data.status)) return false;
+      if (!(data.selectedText === null || typeof data.selectedText === "string")) return false;
+      if (typeof data.pageUrl !== "string" || data.pageUrl.length === 0) return false;
+      if (!this._plainObject(data.target) || !this._plainObject(data.metadata)) return false;
+      if (!Array.isArray(data.thread)) return false;
+      if (!this._validServerTimestamp(data.createdAt) || !this._validServerTimestamp(data.updatedAt)) return false;
+      return true;
+    },
+
+    _plainObject(value) {
+      return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+    },
+
+    _validServerTimestamp(value) {
+      return typeof value === "string" && value.length > 0 && Number.isFinite(Date.parse(value));
     },
 
     _handleSyncSuccess(snapshot, data) {
@@ -1636,11 +1690,13 @@
     async _initSession() {
       if (!this.serverOnline) return;
       try {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-        const headers = { "Content-Type": "application/json" };
-        if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
-        const resp = await fetch(this.endpoint + "/sessions", {
-          method: "POST", headers, credentials: "same-origin",
+        const request = this._sameOriginMutationRequest("/sessions");
+        if (!request) {
+          this._setSyncUnavailable("Sync unavailable: endpoint must be same-origin");
+          return;
+        }
+        const resp = await fetch(request.url, {
+          method: "POST", headers: request.headers, credentials: "same-origin",
           body: JSON.stringify({ url: window.location.href, metadata: { tool: "rails-markup" } }),
           signal: AbortSignal.timeout(5000)
         });
@@ -1654,11 +1710,13 @@
     async _pushToServer(annotation) {
       if (!this.serverOnline) return;
       try {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-        const headers = { "Content-Type": "application/json" };
-        if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
-        await fetch(this.endpoint + "/sessions/" + (this.sessionId || "local") + "/annotations", {
-          method: "POST", headers, credentials: "same-origin",
+        const request = this._sameOriginMutationRequest(`/sessions/${encodeURIComponent(this.sessionId || "local")}/annotations`);
+        if (!request) {
+          this._setSyncUnavailable("Sync unavailable: endpoint must be same-origin");
+          return;
+        }
+        await fetch(request.url, {
+          method: "POST", headers: request.headers, credentials: "same-origin",
           body: JSON.stringify({
             page_url: this._pageUrl(),
             clientId: annotation.clientId,

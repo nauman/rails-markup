@@ -235,6 +235,76 @@ test("successful PUT stores the full response, server id, and clears only sent d
   assert.equal(saved.serverUpdatedAt, "2026-07-20T00:00:01Z");
 });
 
+test("successful PUT validates the complete API representation before mutating durable state", async () => {
+  const annotation = localAnnotation();
+  const valid = serverRepresentation(annotation);
+  const invalidRepresentations = [
+    {},
+    { error: "not actually an annotation" },
+    { ...valid, id: 101, userId: "77", target: [], status: "invented" },
+    { ...valid, clientId: secondId },
+    Object.fromEntries(Object.entries(valid).filter(([key]) => key !== "metadata"))
+  ];
+
+  for (const body of invalidRepresentations) {
+    const fetch = createFakeFetch();
+    fetch.respondWith(body);
+    const originalEntry = upsertEntry(annotation);
+    const harness = flushHarness({ annotations: [annotation], outbox: { [firstId]: originalEntry }, fetch });
+
+    await harness.toolbar._flushOutbox();
+
+    const saved = harness.toolbar.annotations[0];
+    assert.equal(saved.serverId, null);
+    assert.equal(saved.comment, annotation.comment);
+    assert.equal(saved.syncState, "pending");
+    assert.equal(harness.toolbar.outbox[firstId].malformedAttempts, 1);
+    assert.equal(harness.toolbar.outbox[firstId].clientId, firstId);
+    harness.reset();
+  }
+});
+
+test("cross-origin mutation endpoints fail closed before sending CSRF or credentials", async (t) => {
+  const annotation = localAnnotation();
+  const fetch = createFakeFetch();
+  const harness = flushHarness({ annotations: [annotation], outbox: { [firstId]: upsertEntry(annotation) }, fetch });
+  t.after(() => harness.reset());
+  const csrf = harness.window.document.createElement("meta");
+  csrf.name = "csrf-token";
+  csrf.content = "secret-csrf-token";
+  harness.window.document.head.appendChild(csrf);
+  harness.toolbar.endpoint = "//attacker.example/feedback/api";
+
+  await harness.toolbar._flushOutbox();
+  harness.toolbar.serverOnline = true;
+  await harness.toolbar._initSession();
+  await harness.toolbar._pushToServer(annotation);
+
+  assert.equal(fetch.calls.length, 0);
+  assert.ok(harness.toolbar.outbox[firstId]);
+  assert.match(harness.toolbar._syncUnavailable, /same.origin|unavailable/i);
+});
+
+test("absolute same-origin mutation endpoints retain CSRF and same-origin credentials", async (t) => {
+  const annotation = localAnnotation();
+  const fetch = createFakeFetch();
+  fetch.respondWith(serverRepresentation(annotation));
+  const harness = flushHarness({ annotations: [annotation], outbox: { [firstId]: upsertEntry(annotation) }, fetch });
+  t.after(() => harness.reset());
+  const csrf = harness.window.document.createElement("meta");
+  csrf.name = "csrf-token";
+  csrf.content = "same-origin-token";
+  harness.window.document.head.appendChild(csrf);
+  harness.toolbar.endpoint = "https://example.test/feedback/api";
+
+  await harness.toolbar._flushOutbox();
+
+  assert.equal(fetch.calls.length, 1);
+  assert.equal(fetch.calls[0].url, `https://example.test/feedback/api/annotations/${firstId}`);
+  assert.equal(fetch.calls[0].options.headers["X-CSRF-Token"], "same-origin-token");
+  assert.equal(fetch.calls[0].options.credentials, "same-origin");
+});
+
 test("auth, redirects, and successful HTML stop flushing and expose unavailable state", async (t) => {
   for (const response of [
     { body: { error: "sign in" }, options: { status: 401 } },
