@@ -27,6 +27,8 @@
     activeFilter: "all",
     editingId: null,
     _currentScreenshot: null,
+    _outboxFlushScheduled: false,
+    _outboxFlushTimer: null,
 
     // Drawing state
     drawingMode: null,      // null | "arrow" | "rect" | "highlight"
@@ -87,6 +89,8 @@
       this._deactivateMode();
       if (this.sseSource) { this.sseSource.close(); this.sseSource = null; }
       if (this.healthInterval) { clearInterval(this.healthInterval); this.healthInterval = null; }
+      if (this._outboxFlushTimer) { clearTimeout(this._outboxFlushTimer); this._outboxFlushTimer = null; }
+      this._outboxFlushScheduled = false;
       if (this._boundVisibilityChange) {
         document.removeEventListener("visibilitychange", this._boundVisibilityChange);
         this._boundVisibilityChange = null;
@@ -304,6 +308,12 @@
         self._changeStatus(id, select.value);
       });
       panelList.addEventListener("click", (e) => {
+        const retryBtn = e.target.closest("[data-retry-client-id]");
+        if (retryBtn) {
+          e.stopPropagation();
+          self._retrySync(retryBtn.dataset.retryClientId);
+          return;
+        }
         // Status dropdown click — don't scroll
         if (e.target.closest("[data-status-id]")) { e.stopPropagation(); return; }
         // Edit button
@@ -646,11 +656,18 @@
       if (this.editingId) {
         const existing = this.annotations.find(a => a.id === this.editingId);
         if (existing) {
+          const dirtyFields = [];
+          if (existing.comment !== comment) dirtyFields.push("content");
+          if (existing.intent !== intent) dirtyFields.push("intent");
+          if (existing.severity !== severity) dirtyFields.push("severity");
           existing.comment = comment;
           existing.intent = intent;
           existing.severity = severity;
-          if (screenshot) existing.screenshot = screenshot;
-          this._saveToStorage();
+          if (screenshot && existing.screenshot !== screenshot) {
+            existing.screenshot = screenshot;
+            dirtyFields.push("metadata");
+          }
+          if (dirtyFields.length > 0) this._persistLocalMutation("upsert", existing, dirtyFields);
           this._rebuildList();
           this._closePopup();
           return;
@@ -665,6 +682,7 @@
         syncState: "pending",
         serverUpdatedAt: null,
         dirtyFields: [],
+        revision: 0,
         comment, intent, severity,
         element: this._currentElement,
         selectedText: this.selectedText || null,
@@ -678,14 +696,13 @@
       };
 
       this.annotations.push(annotation);
-      this._saveToStorage();
+      this._persistLocalMutation("upsert", annotation, this._browserCreateFields());
       this._renderPin(annotation);
       // Rebuild (not append) so a new card honors the active panel filter —
       // e.g. a pending annotation must not show while "Resolved" is selected.
       this._rebuildList();
       this._updateCount();
       this._closePopup();
-      this._pushToServer(annotation);
     },
 
     // ---- Filters ----
@@ -774,12 +791,32 @@
       const list = document.getElementById("rm-panel-list");
       if (!list) return;
       list.innerHTML = "";
+      this._renderFailedSync(list);
       const filtered = this._filteredAnnotations();
       if (filtered.length === 0) {
-        list.innerHTML = '<div class="rm-empty"><div class="rm-empty-icon">&#9670;</div><div class="rm-empty-text">No annotations yet</div></div>';
+        const empty = document.createElement("div");
+        empty.className = "rm-empty";
+        empty.innerHTML = '<div class="rm-empty-icon">&#9670;</div><div class="rm-empty-text">No annotations yet</div>';
+        list.appendChild(empty);
         return;
       }
       filtered.forEach(a => this._renderCard(a));
+    },
+
+    _renderFailedSync(list) {
+      const failed = Object.values(this.outbox || {}).filter(entry => entry?.syncState === "failed");
+      if (failed.length === 0) return;
+      const section = document.createElement("div");
+      section.className = "rm-failed-sync";
+      section.setAttribute("role", "status");
+      failed.forEach(entry => {
+        const item = document.createElement("div");
+        item.style.cssText = "display:flex;align-items:center;gap:8px;padding:8px;margin-bottom:8px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;color:#991b1b;font-size:11px;";
+        const label = entry.type === "delete" ? "Delete failed" : "Sync failed";
+        item.innerHTML = `<span style="flex:1">${label}</span><button type="button" data-retry-client-id="${this._esc(entry.clientId)}" style="border:1px solid #fca5a5;border-radius:6px;background:#fff;padding:3px 7px;color:#991b1b;cursor:pointer">Retry</button>`;
+        section.appendChild(item);
+      });
+      list.appendChild(section);
     },
 
     _editAnnotation(id) {
@@ -833,7 +870,7 @@
       const annotation = this.annotations.find(a => a.id === id);
       if (!annotation) return;
       annotation.status = newStatus;
-      this._saveToStorage();
+      this._persistLocalMutation("upsert", annotation, ["status"]);
       this._renderPins();
       this._rebuildList();
       const label = newStatus.charAt(0).toUpperCase() + newStatus.slice(1);
@@ -843,8 +880,9 @@
     _deleteAnnotation(id) {
       const idx = this.annotations.findIndex(a => a.id === id);
       if (idx === -1) return;
+      const annotation = this.annotations[idx];
       this.annotations.splice(idx, 1);
-      this._saveToStorage();
+      this._persistLocalMutation("delete", annotation);
       this._renderPins();
       this._rebuildList();
       this._updateCount();
@@ -971,6 +1009,67 @@
         console.warn("[rails-markup] save failed:", e);
         return false;
       }
+    },
+
+    _persistLocalMutation(type, annotation, dirtyFields = []) {
+      const currentEntry = this.outbox[annotation.clientId];
+      const revision = Math.max(annotation.revision || 0, currentEntry?.revision || 0) + 1;
+
+      if (type === "delete") {
+        this.outbox[annotation.clientId] = {
+          type: "delete",
+          clientId: annotation.clientId,
+          revision,
+          syncState: "pending"
+        };
+      } else {
+        const existingDirtyFields = currentEntry?.type === "upsert" ? currentEntry.dirtyFields : [];
+        annotation.dirtyFields = this._mergeDirtyFields(annotation.dirtyFields, existingDirtyFields, dirtyFields);
+        annotation.syncState = "pending";
+        annotation.revision = revision;
+        this.outbox[annotation.clientId] = {
+          type: "upsert",
+          clientId: annotation.clientId,
+          revision,
+          syncState: "pending",
+          annotation: this._desiredState(annotation),
+          dirtyFields: annotation.dirtyFields.slice()
+        };
+      }
+
+      if (this._saveToStorage()) this._scheduleOutboxFlush();
+    },
+
+    _mergeDirtyFields(...collections) {
+      const merged = [];
+      collections.flat().forEach(field => {
+        const canonical = field === "selectedText" ? "selected_text" : field;
+        if (canonical && !merged.includes(canonical)) merged.push(canonical);
+      });
+      return merged;
+    },
+
+    _scheduleOutboxFlush() {
+      if (this._outboxFlushScheduled) return;
+      this._outboxFlushScheduled = true;
+      this._outboxFlushTimer = setTimeout(() => {
+        this._outboxFlushScheduled = false;
+        this._outboxFlushTimer = null;
+        Promise.resolve(this._flushOutbox()).catch(error => console.warn("[rails-markup] outbox flush failed:", error));
+      }, 0);
+    },
+
+    // Task 3C owns transport. Mutations and manual retries schedule this seam only.
+    _flushOutbox() {},
+
+    _retrySync(clientId) {
+      const entry = this.outbox[clientId];
+      if (!entry || entry.syncState !== "failed") return;
+      entry.syncState = "pending";
+      const annotation = this.annotations.find(candidate => candidate.clientId === clientId);
+      if (annotation) annotation.syncState = "pending";
+      if (this._saveToStorage()) this._scheduleOutboxFlush();
+      this._rebuildList();
     },
 
     _loadFromStorage() {
@@ -1133,13 +1232,38 @@
     },
 
     _legacyDirtyFields(annotation) {
-      const fields = ["content", "intent", "severity", "selectedText", "target", "metadata"];
+      const fields = this._browserCreateFields();
       if (annotation.status && annotation.status !== "pending") fields.push("status");
       return fields;
     },
 
+    _browserCreateFields() {
+      return ["content", "intent", "severity", "selected_text", "target", "page_url", "metadata"];
+    },
+
     _desiredState(annotation) {
-      return JSON.parse(JSON.stringify(annotation));
+      const sourceMetadata = annotation.metadata && typeof annotation.metadata === "object" ? annotation.metadata : {};
+      const metadata = {};
+      ["tool", "url", "localId", "sessionId", "screenshot"].forEach(key => {
+        if (sourceMetadata[key] != null) metadata[key] = sourceMetadata[key];
+      });
+      if (metadata.tool == null) metadata.tool = "rails-markup";
+      if (metadata.url == null && annotation.url) metadata.url = annotation.url;
+      if (metadata.localId == null && annotation.id != null) metadata.localId = annotation.id;
+      if (metadata.sessionId == null && this.sessionId != null) metadata.sessionId = this.sessionId;
+      if (metadata.screenshot == null && annotation.screenshot) metadata.screenshot = annotation.screenshot;
+
+      return JSON.parse(JSON.stringify({
+        clientId: annotation.clientId,
+        page_url: annotation.pageUrl || annotation.pathname || this._pageUrl(),
+        content: annotation.comment ?? annotation.content ?? "",
+        intent: annotation.intent,
+        severity: annotation.severity,
+        selected_text: annotation.selectedText ?? annotation.selected_text ?? null,
+        target: annotation.element || annotation.target || {},
+        metadata,
+        status: annotation.status || "pending"
+      }));
     },
 
     _validClientId(clientId) {

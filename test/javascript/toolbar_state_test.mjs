@@ -68,7 +68,8 @@ test("legacy records gain sync fields and only unmapped records enter the outbox
   assert.deepEqual(Object.keys(harness.toolbar.outbox), [uuidA]);
   assert.equal(harness.toolbar.outbox[uuidA].type, "upsert");
   assert.equal(harness.toolbar.outbox[uuidA].annotation.clientId, uuidA);
-  assert.equal(harness.toolbar.outbox[uuidA].annotation.syncState, "pending");
+  assert.equal(harness.toolbar.outbox[uuidA].annotation.status, "pending");
+  assert.equal(harness.toolbar.outbox[uuidA].annotation.content, "Local only");
 });
 
 test("an existing mapping or outbox is not requeued or overwritten", (t) => {
@@ -149,10 +150,10 @@ test("distinct records sharing an invalid client ID remain distinct queued upser
   assert.deepEqual(Object.keys(harness.toolbar.outbox).sort(), [uuidA, uuidB]);
   assert.equal(harness.toolbar.outbox[uuidA].type, "upsert");
   assert.equal(harness.toolbar.outbox[uuidB].type, "upsert");
-  assert.equal(harness.toolbar.outbox[uuidA].annotation.comment, "First record");
+  assert.equal(harness.toolbar.outbox[uuidA].annotation.content, "First record");
   assert.equal(harness.toolbar.outbox[uuidB].annotation.comment, "Second record");
   assert.deepEqual(
-    Object.values(harness.toolbar.outbox).map(entry => entry.annotation.comment).sort(),
+    Object.values(harness.toolbar.outbox).map(entry => entry.annotation.content ?? entry.annotation.comment).sort(),
     ["First record", "Second record"]
   );
 });
@@ -251,14 +252,14 @@ test("retained legacy source cannot overwrite consolidated edits on cleanup retr
   harness.toolbar._loadFromStorage();
 
   harness.toolbar.annotations[0].comment = "Edited desired state";
-  harness.toolbar.outbox[uuidA].annotation.comment = "Edited desired state";
+  harness.toolbar.outbox[uuidA].annotation.content = "Edited desired state";
   harness.toolbar._saveToStorage();
   harness.toolbar._loadFromStorage();
 
   assert.equal(harness.window.localStorage.getItem("rm-annotations:/legacy"), null);
   assert.equal(harness.toolbar.annotations.length, 1);
   assert.equal(harness.toolbar.annotations[0].comment, "Edited desired state");
-  assert.equal(harness.toolbar.outbox[uuidA].annotation.comment, "Edited desired state");
+  assert.equal(harness.toolbar.outbox[uuidA].annotation.content, "Edited desired state");
 });
 
 test("duplicate client IDs collapse to the deterministically newest local record", (t) => {
@@ -369,8 +370,9 @@ test("new UI annotations have the complete sync schema before storage", (t) => {
   assert.equal(annotation.serverId, null);
   assert.equal(annotation.syncState, "pending");
   assert.equal(annotation.serverUpdatedAt, null);
-  assert.deepEqual(Array.from(annotation.dirtyFields), []);
+  assert.deepEqual(Array.from(annotation.dirtyFields), ["content", "intent", "severity", "selected_text", "target", "page_url", "metadata"]);
   assert.equal(harness.storageDocument().annotations[0].syncState, "pending");
+  assert.equal(harness.storageDocument().outbox[uuidA].type, "upsert");
 });
 
 test("harness reset destroys toolbar intervals and global state", (t) => {
