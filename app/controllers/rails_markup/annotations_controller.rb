@@ -137,6 +137,8 @@ module RailsMarkup
 
     ALLOWED_TARGET_KEYS = %w[selector cssPath nearbyText boundingBox].freeze
     ALLOWED_METADATA_KEYS = Annotation::BROWSER_METADATA_KEYS.freeze
+    ALLOWED_DIRTY_FIELDS = (Annotation::BROWSER_ATTRIBUTES + %w[metadata status]).freeze
+    DIRTY_FIELD_ALIASES = { "selectedText" => "selected_text" }.freeze
 
     def fire_create_callback(annotation)
       callback = RailsMarkup.config.on_create_callback
@@ -179,8 +181,8 @@ module RailsMarkup
       fields = params[:dirtyFields] || []
       return unless fields.is_a?(Array)
 
-      fields = fields.map(&:to_s)
-      fields if (fields - ["status"]).empty?
+      fields = fields.map { |field| DIRTY_FIELD_ALIASES.fetch(field.to_s, field.to_s) }
+      fields if (fields - ALLOWED_DIRTY_FIELDS).empty?
     end
 
     def client_supplied_author?

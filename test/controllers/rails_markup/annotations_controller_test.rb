@@ -173,9 +173,33 @@ module RailsMarkup
       assert_equal "resolved", annotation.reload.status
     end
 
+    test "put accepts browser owned dirty fields" do
+      annotation = Annotation.create!(client_uuid: "browser-dirty", content: "Before", page_url: "/dirty")
+
+      put "/feedback/api/annotations/browser-dirty",
+        params: {
+          content: "After",
+          page_url: "/dirty",
+          target: { selector: "main" },
+          selectedText: "Selected",
+          dirtyFields: %w[content target selectedText]
+        },
+        as: :json
+
+      assert_response :ok
+      annotation.reload
+      assert_equal "After", annotation.content
+      assert_equal({ "selector" => "main" }, annotation.target)
+      assert_equal "Selected", annotation.selected_text
+    end
+
     test "put rejects invalid dirty fields and invalid explicitly dirty status" do
       put "/feedback/api/annotations/invalid-dirty",
         params: { content: "No", page_url: "/", dirtyFields: ["thread"] }, as: :json
+      assert_response :unprocessable_entity
+
+      put "/feedback/api/annotations/invalid-author-dirty",
+        params: { content: "No", page_url: "/", dirtyFields: ["author"] }, as: :json
       assert_response :unprocessable_entity
 
       put "/feedback/api/annotations/invalid-dirty-shape",
