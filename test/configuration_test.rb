@@ -23,6 +23,17 @@ class ConfigurationTest < ActiveSupport::TestCase
     assert_equal "indigo", config.toolbar_accent
   end
 
+  test "toolbar is enabled by default" do
+    assert RailsMarkup::Configuration.new.toolbar_enabled
+  end
+
+  test "toolbar can be disabled" do
+    config = RailsMarkup::Configuration.new
+    config.toolbar_enabled = false
+
+    assert_not config.toolbar_enabled
+  end
+
   test "defaults api_token to nil" do
     config = RailsMarkup::Configuration.new
     assert_nil config.api_token

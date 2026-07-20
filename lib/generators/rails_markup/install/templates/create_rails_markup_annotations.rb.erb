@@ -11,6 +11,7 @@ class CreateRailsMarkupAnnotations < ActiveRecord::Migration<%= migration_versio
       t.text :selected_text
       t.jsonb :metadata, default: {}
       t.jsonb :thread, default: []
+      t.string :client_uuid, limit: 64
 
       t.timestamps
     end
@@ -18,5 +19,6 @@ class CreateRailsMarkupAnnotations < ActiveRecord::Migration<%= migration_versio
     add_index :rails_markup_annotations, [:status, :created_at]
     add_index :rails_markup_annotations, :page_url
     add_index :rails_markup_annotations, :user_id
+    add_index :rails_markup_annotations, :client_uuid, unique: true
   end
 end

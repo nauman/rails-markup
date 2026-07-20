@@ -2,6 +2,7 @@
 
 require "bubbletea"
 require "lipgloss"
+require_relative "base"
 require_relative "../mcp_config"
 require_relative "initializer_writer"
 

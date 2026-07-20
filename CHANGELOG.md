@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- `toolbar_enabled` configuration to show or hide the annotation toolbar and FAB.
+- Stable per-annotation client UUIDs with a database uniqueness constraint for safe request replay.
+
+### Fixed
+
+- Deterministic dashboard ordering for annotations with identical timestamps.
+- CLI test load order so the complete suite can run in one process.
+- Repeated Turbo execution no longer replaces the toolbar singleton or leaks navigation listeners.
+
 ## [1.0.0] - 2026-03-12
 
 First stable release. Full annotation lifecycle from browser toolbar through AI agent resolution.

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "base"
+
 module RailsMarkup
   class Cli
     # Reads/writes config/initializers/rails_markup.rb with upsert semantics.

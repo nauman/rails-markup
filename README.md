@@ -26,6 +26,13 @@ rails generate rails_markup:install
 rails db:migrate
 ```
 
+When upgrading an existing installation, copy and run new engine migrations:
+
+```bash
+bin/rails railties:install:migrations FROM=rails_markup
+bin/rails db:migrate
+```
+
 The generator creates:
 
 | File | Purpose |
@@ -76,6 +83,13 @@ RailsMarkup.configure do |config|
 
   # Toolbar accent color: indigo, amber, blue, emerald, rose
   config.toolbar_accent = "indigo"
+
+  # Show or hide the annotation toolbar and FAB (default: true)
+  config.toolbar_enabled = true
+
+  # FAB corner: bl, br, tl, tr; size: slim, compact, default
+  config.toolbar_position = "bl"
+  config.toolbar_size = "default"
 
   # Element screenshots (default: true)
   config.enable_screenshots = true

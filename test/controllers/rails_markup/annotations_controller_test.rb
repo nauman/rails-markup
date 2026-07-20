@@ -63,12 +63,12 @@ module RailsMarkup
       assert body["errors"].any? { |e| e.include?("Content") }
     end
 
-    test "create deduplicates by localId and page_url" do
+    test "create deduplicates an exact replay by client id" do
       # First submission — creates
       assert_difference "Annotation.count", 1 do
         post session_annotations_path("test-session"),
           params: { page_url: "/dedup-test", content: "Fix spacing", intent: "fix", severity: "important",
-                    metadata: { localId: 42 } },
+                    clientId: "92bbf4ef-7f45-4c20-a56a-21b7cc21ef27", metadata: { localId: 42 } },
           as: :json
       end
       assert_response :created
@@ -78,25 +78,44 @@ module RailsMarkup
       assert_no_difference "Annotation.count" do
         post session_annotations_path("test-session"),
           params: { page_url: "/dedup-test", content: "Fix spacing", intent: "fix", severity: "important",
-                    metadata: { localId: 42 } },
+                    clientId: "92bbf4ef-7f45-4c20-a56a-21b7cc21ef27", metadata: { localId: 42 } },
           as: :json
       end
       assert_response :ok
       assert_equal first_id, response.parsed_body["id"]
     end
 
-    test "create allows same localId on different pages" do
+    test "create allows reused localId on the same page when client ids differ" do
       post session_annotations_path("test-session"),
-        params: { page_url: "/page-a", content: "Fix A", metadata: { localId: 1 } },
+        params: { page_url: "/same-page", content: "Fix A", clientId: "2dd40ebd-385c-4386-896c-53b998c298a2",
+                  metadata: { localId: 1 } },
         as: :json
       assert_response :created
 
       assert_difference "Annotation.count", 1 do
         post session_annotations_path("test-session"),
-          params: { page_url: "/page-b", content: "Fix B", metadata: { localId: 1 } },
+          params: { page_url: "/same-page", content: "Fix B", clientId: "51db87d0-9d98-44ec-84f4-aae7c7935fe7",
+                    metadata: { localId: 1 } },
           as: :json
       end
       assert_response :created
+    end
+
+    test "create rejects a client id reused for different content" do
+      client_id = "8b018697-a8bf-401e-88af-c0185ff92541"
+      post session_annotations_path("test-session"),
+        params: { page_url: "/dedup-test", content: "Original", clientId: client_id },
+        as: :json
+      assert_response :created
+
+      assert_no_difference "Annotation.count" do
+        post session_annotations_path("test-session"),
+          params: { page_url: "/dedup-test", content: "Different", clientId: client_id },
+          as: :json
+      end
+
+      assert_response :conflict
+      assert_equal "client id already used for a different annotation", response.parsed_body["error"]
     end
 
     test "create normalizes camelCase selectedText to selected_text" do

@@ -8,6 +8,8 @@
 (function(global) {
   "use strict";
 
+  if (global.RailsMarkupToolbar) return;
+
   const RailsMarkupToolbar = {
     // State
     annotations: [],
@@ -43,37 +45,56 @@
     root: null,
 
     init(opts = {}) {
+      const previousPathname = this._currentPathname;
       this.endpoint = opts.endpoint || "/feedback/api";
       this.accent = opts.accent || "indigo";
       this.position = opts.position || "bl";
       this.size = opts.size || "default";
       this.enableScreenshots = opts.enableScreenshots !== false;
       this.healthIntervalMs = (opts.healthInterval || 60) * 1000;
-      this._currentPathname = window.location.pathname;
 
-      if (document.getElementById("rm-toolbar-root")) return;
+      if (document.getElementById("rm-toolbar-root")) {
+        if (window.location.pathname !== this._currentPathname) this._onTurboNavigate();
+        return;
+      }
+
+      if (previousPathname && previousPathname !== window.location.pathname) this._deactivateMode();
+      this._currentPathname = window.location.pathname;
       this._injectStyles();
       this._injectDOM();
       this._bindEvents();
       this._loadFromStorage();
       this._checkHealth();
-      this.healthInterval = setInterval(() => this._checkHealth(), this.healthIntervalMs);
-      this._boundVisibilityChange = () => this._onVisibilityChange();
-      document.addEventListener("visibilitychange", this._boundVisibilityChange);
+      if (!this.healthInterval) this.healthInterval = setInterval(() => this._checkHealth(), this.healthIntervalMs);
+      if (!this._boundVisibilityChange) {
+        this._boundVisibilityChange = () => this._onVisibilityChange();
+        document.addEventListener("visibilitychange", this._boundVisibilityChange);
+      }
       this._renderPins();
       this._updateCount();
+      if (previousPathname && previousPathname !== this._currentPathname && this.serverOnline) this._initSession();
     },
 
     destroy() {
       this._deactivateMode();
       if (this.sseSource) { this.sseSource.close(); this.sseSource = null; }
       if (this.healthInterval) { clearInterval(this.healthInterval); this.healthInterval = null; }
-      if (this._boundVisibilityChange) document.removeEventListener("visibilitychange", this._boundVisibilityChange);
-      window.removeEventListener("resize", this._onResize);
-      if (this._boundTurboNavigate) document.removeEventListener("turbo:load", this._boundTurboNavigate);
-      if (this._boundTurboFrame) document.removeEventListener("turbo:frame-render", this._boundTurboFrame);
+      if (this._boundVisibilityChange) {
+        document.removeEventListener("visibilitychange", this._boundVisibilityChange);
+        this._boundVisibilityChange = null;
+      }
+      if (this._onResize) window.removeEventListener("resize", this._onResize);
+      if (this._onScroll) window.removeEventListener("scroll", this._onScroll);
+      if (this._boundTurboFrame) {
+        document.removeEventListener("turbo:frame-render", this._boundTurboFrame);
+        this._boundTurboFrame = null;
+      }
+      this._onResize = null;
+      this._onScroll = null;
       const root = document.getElementById("rm-toolbar-root");
       if (root) root.remove();
+      const pins = document.getElementById("rm-pins-container");
+      if (pins) pins.remove();
       const styles = document.getElementById("rm-toolbar-styles");
       if (styles) styles.remove();
     },
@@ -244,10 +265,12 @@
       pinsContainer.className = "rm-pins-container";
       pinsContainer.id = "rm-pins-container";
       document.body.appendChild(pinsContainer);
-      this._onResize = this._debouncedRepositionPins(250);
-      this._onScroll = this._debouncedRepositionPins(50);
-      window.addEventListener("resize", this._onResize);
-      window.addEventListener("scroll", this._onScroll, { passive: true });
+      if (!this._onResize) {
+        this._onResize = this._debouncedRepositionPins(250);
+        this._onScroll = this._debouncedRepositionPins(50);
+        window.addEventListener("resize", this._onResize);
+        window.addEventListener("scroll", this._onScroll, { passive: true });
+      }
     },
 
     _bindEvents() {
@@ -319,12 +342,11 @@
       this._boundTouchStart = (e) => { if (self.active && e.touches[0]) { const t = e.touches[0]; self._handleMouseDown({ clientX: t.clientX, clientY: t.clientY }); } };
       this._boundTouchEnd = (e) => { if (self.active && e.changedTouches[0]) { const t = e.changedTouches[0]; const el = document.elementFromPoint(t.clientX, t.clientY); if (el && !self._isToolbar(el)) { e.preventDefault(); self._handleMouseUp({ clientX: t.clientX, clientY: t.clientY, preventDefault(){}, stopPropagation(){} }); } } };
 
-      // Turbo Drive — full page navigation, reload annotations for new URL
-      this._boundTurboNavigate = () => self._onTurboNavigate();
-      document.addEventListener("turbo:load", this._boundTurboNavigate);
       // Turbo Frames — partial DOM update, reposition pins
-      this._boundTurboFrame = () => self._onTurboFrameRender();
-      document.addEventListener("turbo:frame-render", this._boundTurboFrame);
+      if (!this._boundTurboFrame) {
+        this._boundTurboFrame = () => self._onTurboFrameRender();
+        document.addEventListener("turbo:frame-render", this._boundTurboFrame);
+      }
     },
 
     // ---- Turbo integration ----
@@ -628,6 +650,7 @@
       // New annotation
       const annotation = {
         id: this.nextId++,
+        clientId: this._newClientId(),
         comment, intent, severity,
         element: this._currentElement,
         selectedText: this.selectedText || null,
@@ -828,6 +851,8 @@
     _renderPin(annotation) {
       if (!annotation.element?.boundingBox) return;
       const { top, left, width } = annotation.element.boundingBox;
+      const container = document.getElementById("rm-pins-container");
+      if (!container) return;
       const isResolved = annotation.status === "resolved" || annotation.status === "dismissed";
       const pin = document.createElement("div");
       pin.className = "rm-pin" + (isResolved ? "" : " rm-pin-active");
@@ -838,7 +863,7 @@
       if (isResolved) pin.style.opacity = "0.6";
       pin.textContent = annotation.id;
       pin.title = "#" + annotation.id + ": " + annotation.comment.slice(0, 50);
-      document.getElementById("rm-pins-container").appendChild(pin);
+      container.appendChild(pin);
     },
 
     _renderPins() {
@@ -936,6 +961,7 @@
         }
         // Migrate any old per-page annotations into global store
         this._migratePageAnnotations();
+        this._backfillClientIds();
         this._rebuildList();
         this._updateCount();
       } catch (e) { console.warn("[rails-markup] load failed:", e); }
@@ -965,6 +991,22 @@
       }
       keysToRemove.forEach(k => localStorage.removeItem(k));
       if (keysToRemove.length > 0) this._saveToStorage();
+    },
+
+    _backfillClientIds() {
+      let changed = false;
+      this.annotations.forEach(annotation => {
+        if (!annotation.clientId) {
+          annotation.clientId = this._newClientId();
+          changed = true;
+        }
+      });
+      if (changed) this._saveToStorage();
+    },
+
+    _newClientId() {
+      if (global.crypto && typeof global.crypto.randomUUID === "function") return global.crypto.randomUUID();
+      return "rm-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 14);
     },
 
     // ---- Server sync ----
@@ -1023,6 +1065,7 @@
           method: "POST", headers, credentials: "same-origin",
           body: JSON.stringify({
             page_url: annotation.pathname,
+            clientId: annotation.clientId,
             content: annotation.comment,
             intent: annotation.intent,
             severity: annotation.severity,

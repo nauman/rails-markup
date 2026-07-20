@@ -19,6 +19,7 @@ module RailsMarkup
     validates :content, presence: true, length: { maximum: 5000 }
     validates :page_url, presence: true, length: { maximum: 2048 }
     validates :selected_text, length: { maximum: 2000 }, allow_nil: true
+    validates :client_uuid, length: { maximum: 64 }, allow_nil: true
     validates :intent, inclusion: { in: INTENTS }
     validates :severity, inclusion: { in: SEVERITIES }
     validates :status, inclusion: { in: STATUSES }
@@ -30,7 +31,7 @@ module RailsMarkup
     scope :dismissed, -> { where(status: "dismissed") }
     scope :active, -> { where(status: %w[pending acknowledged]) }
     scope :for_page, ->(url) { where(page_url: url) }
-    scope :recent, -> { order(created_at: :desc) }
+    scope :recent, -> { order(created_at: :desc, id: :desc) }
 
     scope :search, ->(query) {
       where("content LIKE :q OR selected_text LIKE :q", q: "%#{sanitize_sql_like(query)}%")
@@ -88,6 +89,7 @@ module RailsMarkup
     def as_api_json
       {
         id: id.to_s,
+        clientId: client_uuid,
         userId: user_id,
         authorName: author_name,
         content: content,

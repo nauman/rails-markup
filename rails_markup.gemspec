@@ -22,6 +22,7 @@ Gem::Specification.new do |spec|
     "app/**/*.erb",
     "app/**/*.js",
     "config/**/*.rb",
+    "db/**/*.rb",
     "bin/*",
     "README.md",
     "LICENSE"

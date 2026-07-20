@@ -1,13 +1,18 @@
 # frozen_string_literal: true
 
-require "thor"
 require "lipgloss"
 require "set"
-require_relative "../rails_markup"
+require_relative "version"
+require_relative "store"
+require_relative "http_store_proxy"
+require_relative "http_server"
+require_relative "mcp_server"
+require_relative "server"
 require_relative "mcp_config"
+require_relative "cli/base"
 
 module RailsMarkup
-  class Cli < Thor
+  class Cli
     require_relative "cli/initializer_writer"
     require_relative "cli/setup_wizard"
     # ── Lipgloss styles ────────────────────────────────────────

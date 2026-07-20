@@ -99,6 +99,15 @@ module RailsMarkup
       assert_equal({}, Annotation.new.metadata)
     end
 
+    test "database rejects duplicate client UUIDs" do
+      client_uuid = "aaef53ed-01cb-4c69-b49c-d4890f60bcc6"
+      Annotation.create!(content: "First", page_url: "/test", client_uuid: client_uuid)
+
+      assert_raises ActiveRecord::RecordNotUnique do
+        Annotation.create!(content: "Second", page_url: "/test", client_uuid: client_uuid)
+      end
+    end
+
     # --- Scopes ---
 
     test "pending scope returns only pending annotations" do
@@ -156,6 +165,14 @@ module RailsMarkup
         assert newer.created_at >= older.created_at,
           "Expected #{newer.created_at} >= #{older.created_at}"
       end
+    end
+
+    test "recent scope uses descending id as a tiebreaker" do
+      timestamp = Time.current.change(usec: 0)
+      first = Annotation.create!(content: "First", page_url: "/tied", created_at: timestamp, updated_at: timestamp)
+      second = Annotation.create!(content: "Second", page_url: "/tied", created_at: timestamp, updated_at: timestamp)
+
+      assert_equal [second.id, first.id], Annotation.where(id: [first.id, second.id]).recent.pluck(:id)
     end
 
     test "scopes compose — active on specific page" do
@@ -351,6 +368,12 @@ module RailsMarkup
       annotation = Annotation.new(content: "Test", page_url: "/test", metadata: { "author" => "Alice" })
       json = annotation.as_api_json
       assert_equal "Alice", json[:authorName]
+    end
+
+    test "as_api_json includes clientId" do
+      annotation = Annotation.new(content: "Test", page_url: "/test", client_uuid: "client-123")
+
+      assert_equal "client-123", annotation.as_api_json[:clientId]
     end
 
     test "as_api_json authorName is nil when no author" do

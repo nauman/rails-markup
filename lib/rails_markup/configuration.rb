@@ -21,6 +21,10 @@ module RailsMarkup
     # Accent color for the toolbar FAB and UI elements.
     attr_reader :toolbar_accent
 
+    # Render the annotation toolbar and FAB.
+    # Default: true
+    attr_accessor :toolbar_enabled
+
     # URL path for "Back to app" link in the dashboard header.
     # Set to nil to hide the link.
     # Example: "/admin"
@@ -68,6 +72,7 @@ module RailsMarkup
       @table_name = "rails_markup_annotations"
       @per_page = 25
       @toolbar_accent = "indigo"
+      @toolbar_enabled = true
       @toolbar_position = "bl"
       @toolbar_size = "default"
       @return_url = nil

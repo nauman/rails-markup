@@ -193,6 +193,26 @@ module RailsMarkup
       assert_response :success
     end
 
+    test "index and load_more use id to order tied timestamps without overlap" do
+      original_per_page = RailsMarkup.config.per_page
+      RailsMarkup.config.per_page = 2
+      timestamp = Time.current.change(usec: 0)
+      records = 4.times.map do |i|
+        Annotation.create!(content: "Tied #{i}", page_url: "/tied-pagination", created_at: timestamp, updated_at: timestamp)
+      end
+
+      get rails_markup.root_path(status: "all", page_url: "/tied-pagination")
+      first_page_ids = css_select(".rm-card").map { |card| card["data-annotation-id"].to_i }
+
+      get rails_markup.load_more_path(status: "all", page_url: "/tied-pagination", page: 2)
+      second_page_ids = css_select(".rm-card").map { |card| card["data-annotation-id"].to_i }
+
+      assert_equal records.map(&:id).reverse, first_page_ids + second_page_ids
+      assert_empty first_page_ids & second_page_ids
+    ensure
+      RailsMarkup.config.per_page = original_per_page
+    end
+
     test "load_more respects search and author filters" do
       Annotation.create!(content: "Searchable item", page_url: "/t", metadata: { "author" => "FilterAuthor" })
 

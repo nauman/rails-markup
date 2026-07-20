@@ -84,6 +84,8 @@ class InstallGeneratorTest < ActiveSupport::TestCase
     assert_match(/thread/, content)
     assert_match(/target/, content)
     assert_match(/metadata/, content)
+    assert_match(/client_uuid/, content)
+    assert_match(/unique: true/, content)
   end
 
   test "initializer template sets base_controller_class to RailsMarkupAuthController" do

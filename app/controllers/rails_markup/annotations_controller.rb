@@ -17,18 +17,11 @@ module RailsMarkup
 
     # POST /feedback/api/sessions/:session_id/annotations
     def create
-      # Dedup: if this localId was already submitted for this page, return existing
-      if (local_id = params.dig(:metadata, :localId))
-        existing = find_by_local_id(local_id, params[:page_url] || request.referer || "/")
-        return render json: existing.as_api_json, status: :ok if existing
-      end
-
       annotation = Annotation.new(annotation_params)
+      assign_current_user(annotation)
 
-      if respond_to?(:current_user, true) && current_user
-        annotation.user_id = current_user.id
-        author = RailsMarkup.config.resolve_author_name(current_user)
-        annotation.metadata = (annotation.metadata || {}).merge("author" => author) if author
+      if annotation.client_uuid.present? && (existing = Annotation.find_by(client_uuid: annotation.client_uuid))
+        return render_duplicate(existing, annotation)
       end
 
       if annotation.save
@@ -37,6 +30,10 @@ module RailsMarkup
       else
         render json: { errors: annotation.errors.full_messages }, status: :unprocessable_entity
       end
+    rescue ActiveRecord::RecordNotUnique
+      raise if annotation.client_uuid.blank?
+
+      render_duplicate(Annotation.find_by!(client_uuid: annotation.client_uuid), annotation)
     end
 
     # GET /feedback/api/health
@@ -76,12 +73,21 @@ module RailsMarkup
       @annotation = Annotation.find(params[:id])
     end
 
-    def find_by_local_id(local_id, page_url)
-      scope = Annotation.where(page_url: page_url)
-      if Annotation.connection.adapter_name.downcase.include?("postgres")
-        scope.where("metadata->>'localId' = ?", local_id.to_s).first
+    DEDUP_ATTRIBUTES = %w[user_id page_url content intent severity selected_text target metadata].freeze
+
+    def assign_current_user(annotation)
+      return unless respond_to?(:current_user, true) && current_user
+
+      annotation.user_id = current_user.id
+      author = RailsMarkup.config.resolve_author_name(current_user)
+      annotation.metadata = (annotation.metadata || {}).merge("author" => author) if author
+    end
+
+    def render_duplicate(existing, candidate)
+      if existing.attributes.slice(*DEDUP_ATTRIBUTES) == candidate.attributes.slice(*DEDUP_ATTRIBUTES)
+        render json: existing.as_api_json, status: :ok
       else
-        scope.where("CAST(json_extract(metadata, '$.localId') AS TEXT) = CAST(? AS TEXT)", local_id).first
+        render json: { error: "client id already used for a different annotation" }, status: :conflict
       end
     end
 
@@ -98,8 +104,9 @@ module RailsMarkup
     end
 
     def annotation_params
-      permitted = params.permit(:page_url, :content, :intent, :severity, :selected_text, :selectedText, target: {}, metadata: {})
+      permitted = params.permit(:page_url, :content, :intent, :severity, :selected_text, :selectedText, :clientId, target: {}, metadata: {})
       permitted[:selected_text] ||= permitted.delete(:selectedText)
+      permitted[:client_uuid] = permitted.delete(:clientId)
       permitted[:page_url] ||= request.referer || "/"
       permitted[:target] = normalize_target(params[:target]) if params[:target].present?
       permitted[:metadata] = normalize_hash(params[:metadata], ALLOWED_METADATA_KEYS) if params[:metadata].present?
