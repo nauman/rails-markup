@@ -5,7 +5,7 @@
 <% if @next_page %>
   <div class="rm-load-more">
     <button class="rm-load-more-btn"
-            data-next-url="<%= rails_markup.load_more_path(status: @current_status, page: @next_page, page_url: params[:page_url], q: params[:q], author: params[:author]) %>"
+            data-next-url="<%= rails_markup.load_more_path(status: @current_status, before_time: @next_time, before_id: @next_id, page_url: params[:page_url], q: params[:q], author: params[:author]) %>"
             onclick="rmLoadMore(this)">
       Load more (<%= @remaining %> remaining)
     </button>

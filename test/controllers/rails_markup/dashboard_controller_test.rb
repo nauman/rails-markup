@@ -193,7 +193,7 @@ module RailsMarkup
       assert_response :success
     end
 
-    test "index and load_more use id to order tied timestamps without overlap" do
+    test "index and load_more use a keyset cursor for tied timestamps without overlap" do
       original_per_page = RailsMarkup.config.per_page
       RailsMarkup.config.per_page = 2
       timestamp = Time.current.change(usec: 0)
@@ -203,12 +203,41 @@ module RailsMarkup
 
       get rails_markup.root_path(status: "all", page_url: "/tied-pagination")
       first_page_ids = css_select(".rm-card").map { |card| card["data-annotation-id"].to_i }
+      # Follow the real cursor link the button carries (not a page number)
+      next_url = css_select(".rm-load-more-btn").first["data-next-url"]
 
-      get rails_markup.load_more_path(status: "all", page_url: "/tied-pagination", page: 2)
+      get next_url
       second_page_ids = css_select(".rm-card").map { |card| card["data-annotation-id"].to_i }
 
       assert_equal records.map(&:id).reverse, first_page_ids + second_page_ids
       assert_empty first_page_ids & second_page_ids
+    ensure
+      RailsMarkup.config.per_page = original_per_page
+    end
+
+    test "keyset load_more does not repeat a row when an annotation is inserted between pages" do
+      original_per_page = RailsMarkup.config.per_page
+      RailsMarkup.config.per_page = 2
+      base = Time.current.change(usec: 0)
+      4.times do |i|
+        t = base + i
+        Annotation.create!(content: "Row #{i}", page_url: "/concurrent", created_at: t, updated_at: t)
+      end
+
+      get rails_markup.root_path(status: "all", page_url: "/concurrent")
+      first_ids = css_select(".rm-card").map { |c| c["data-annotation-id"].to_i }
+      next_url = css_select(".rm-load-more-btn").first["data-next-url"]
+
+      # A newer annotation arrives before "Load more" is clicked — with offset
+      # pagination this shifts the window and repeats a boundary row.
+      newer = base + 10
+      Annotation.create!(content: "Inserted", page_url: "/concurrent", created_at: newer, updated_at: newer)
+
+      get next_url
+      second_ids = css_select(".rm-card").map { |c| c["data-annotation-id"].to_i }
+
+      assert_empty first_ids & second_ids,
+                   "cursor page must not repeat a first-page row after a concurrent insert"
     ensure
       RailsMarkup.config.per_page = original_per_page
     end

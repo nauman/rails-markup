@@ -55,19 +55,7 @@ module RailsMarkup
       @resolved_count = counts["resolved"] || 0
       @dismissed_count = counts["dismissed"] || 0
 
-      scope = base_scope.recent
-      scope = scope.where(status: @current_status) unless @current_status == "all"
-      scope = scope.search(params[:q]) if params[:q].present?
-      scope = scope.by_author(params[:author]) if params[:author].present?
-
-      # Use filtered count for pagination (not total)
-      @filtered_count = scope.count
-      @current_page = (params[:page] || 1).to_i
-      @annotations = scope.limit(per_page).offset((@current_page - 1) * per_page)
-
-      loaded_so_far = @current_page * per_page
-      @remaining = [@filtered_count - loaded_so_far, 0].max
-      @next_page = @remaining > 0 ? @current_page + 1 : nil
+      paginate(filtered_scope)
 
       @page_urls = Annotation.distinct.pluck(:page_url).sort
       @current_page_url = params[:page_url]
@@ -83,18 +71,11 @@ module RailsMarkup
     # GET /feedback/load_more
     def load_more
       @current_status = ALLOWED_STATUSES.include?(params[:status]) ? params[:status] : "pending"
-      scope = build_base_scope.recent
-      scope = scope.where(status: @current_status) unless @current_status == "all"
-      scope = scope.search(params[:q]) if params[:q].present?
-      scope = scope.by_author(params[:author]) if params[:author].present?
+      @current_page_url = params[:page_url]
+      @current_author = params[:author]
+      @current_query = params[:q]
 
-      filtered_count = scope.count
-      @current_page = (params[:page] || 1).to_i
-      @annotations = scope.limit(per_page).offset((@current_page - 1) * per_page)
-
-      loaded_so_far = @current_page * per_page
-      @remaining = [filtered_count - loaded_so_far, 0].max
-      @next_page = @remaining > 0 ? @current_page + 1 : nil
+      paginate(filtered_scope)
 
       render partial: "annotation_page", layout: false
     end
@@ -170,6 +151,49 @@ module RailsMarkup
 
     def build_base_scope
       params[:page_url].present? ? Annotation.for_page(params[:page_url]) : Annotation.all
+    end
+
+    # Shared filtered, ordered scope for index + load_more. Requires @current_status.
+    def filtered_scope
+      scope = build_base_scope.recent
+      scope = scope.where(status: @current_status) unless @current_status == "all"
+      scope = scope.search(params[:q]) if params[:q].present?
+      scope = scope.by_author(params[:author]) if params[:author].present?
+      scope
+    end
+
+    # Keyset pagination: fetch one extra row to detect "more", and expose a
+    # (created_at, id) cursor for the next page instead of a page/offset — so a
+    # row inserted between requests can't push a boundary row onto two pages.
+    def paginate(scope)
+      cursor = scope
+      before_time = parse_cursor_time(params[:before_time])
+      if before_time && params[:before_id].present?
+        cursor = cursor.before_cursor(before_time, params[:before_id].to_i)
+      end
+
+      rows = cursor.limit(per_page + 1).to_a
+      @next_page = rows.size > per_page
+      @annotations = rows.first(per_page)
+
+      if @next_page && @annotations.any?
+        last = @annotations.last
+        @next_time = last.created_at.iso8601(6)
+        @next_id = last.id
+        @remaining = scope.before_cursor(last.created_at, last.id).count
+      else
+        @next_page = false
+        @next_time = @next_id = nil
+        @remaining = 0
+      end
+    end
+
+    def parse_cursor_time(value)
+      return nil if value.blank?
+
+      Time.zone.parse(value.to_s)
+    rescue ArgumentError
+      nil
     end
 
     def build_export_scope

@@ -33,6 +33,13 @@ module RailsMarkup
     scope :for_page, ->(url) { where(page_url: url) }
     scope :recent, -> { order(created_at: :desc, id: :desc) }
 
+    # Keyset (cursor) companion to :recent — rows strictly older than the
+    # (created_at, id) cursor. Avoids the offset-overlap that repeats a boundary
+    # row when annotations are inserted between "Load more" requests.
+    scope :before_cursor, ->(created_at, id) {
+      where("created_at < :t OR (created_at = :t AND id < :id)", t: created_at, id: id)
+    }
+
     scope :search, ->(query) {
       where("content LIKE :q OR selected_text LIKE :q", q: "%#{sanitize_sql_like(query)}%")
     }
