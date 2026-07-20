@@ -75,7 +75,16 @@ module RailsMarkup
       @current_author = params[:author]
       @current_query = params[:q]
 
-      paginate(filtered_scope)
+      # load_more only ever fetches the NEXT page. A missing/invalid cursor
+      # (stale ?page= link, malformed cursor) must not silently re-serve page
+      # one, which would append duplicate cards. Return an empty page instead.
+      if valid_cursor?
+        paginate(filtered_scope)
+      else
+        @annotations = []
+        @next_page = false
+        @remaining = 0
+      end
 
       render partial: "annotation_page", layout: false
     end
@@ -194,6 +203,10 @@ module RailsMarkup
       Time.zone.parse(value.to_s)
     rescue ArgumentError
       nil
+    end
+
+    def valid_cursor?
+      params[:before_id].present? && parse_cursor_time(params[:before_time]).present?
     end
 
     def build_export_scope

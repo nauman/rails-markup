@@ -1,22 +1,23 @@
 # frozen_string_literal: true
 
-require "test_helper"
+require "minitest/autorun"
 
-# Guards the client_uuid migration against hardcoding the default table name,
-# which silently skips the migration (and defeats create-dedup) on installs
-# that set a custom config.table_name.
-class MigrationSourceTest < ActiveSupport::TestCase
+# Pure source-string checks — no Rails needed, so it runs standalone (not
+# load-order coupled). Guards the client_uuid migration against hardcoding the
+# default table name, which silently skips the migration (and defeats
+# create-dedup) on installs that set a custom config.table_name.
+class MigrationSourceTest < Minitest::Test
   MIGRATION = File.expand_path(
     "../db/migrate/20260720000000_add_client_uuid_to_rails_markup_annotations.rb", __dir__
   )
 
-  test "client_uuid migration derives the table name from config" do
+  def test_client_uuid_migration_derives_the_table_name_from_config
     source = File.read(MIGRATION)
 
-    assert_match(/RailsMarkup\.config\.table_name/, source,
-                 "migration must honor config.table_name")
-    assert_no_match(/:rails_markup_annotations/, source,
-                    "migration must not hardcode the default table name")
-    assert_match(/unique: true/, source, "client_uuid index must be unique")
+    assert_includes source, "RailsMarkup.config.table_name",
+                    "migration must honor config.table_name"
+    refute_includes source, ":rails_markup_annotations",
+                    "migration must not hardcode the default table name"
+    assert_includes source, "unique: true", "client_uuid index must be unique"
   end
 end

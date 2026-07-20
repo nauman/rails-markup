@@ -249,15 +249,28 @@ module RailsMarkup
       assert_response :success
     end
 
-    test "load_more shows remaining count when more pages" do
+    test "index shows remaining count and load_more follows the cursor" do
       # Create enough annotations to have multiple pages (per_page defaults to 25)
       30.times do |i|
         Annotation.create!(content: "Bulk annotation #{i}", page_url: "/bulk", status: "pending")
       end
 
-      get rails_markup.load_more_path(status: "pending", page: 1)
-      assert_response :success
+      get rails_markup.root_path(status: "pending", page_url: "/bulk")
       assert_match(/remaining/, response.body)
+      next_url = css_select(".rm-load-more-btn").first["data-next-url"]
+
+      get next_url
+      assert_response :success
+    end
+
+    test "load_more without a cursor returns an empty page (no page-one repeat)" do
+      10.times do |i|
+        Annotation.create!(content: "Item #{i}", page_url: "/nocursor", status: "pending")
+      end
+
+      get rails_markup.load_more_path(status: "pending", page_url: "/nocursor")
+      assert_response :success
+      assert_empty css_select(".rm-card"), "cursor-less load_more must not re-serve page one"
     end
 
     test "index no longer renders page-number pills" do

@@ -25,6 +25,8 @@ All notable changes to this project will be documented in this file.
 - Legacy per-page localStorage migration no longer discards annotations whose ids collide across pages.
 - Toolbar panel and popup no longer overflow small mobile screens.
 - Generated install migration uses `json` on SQLite/MySQL instead of PostgreSQL-only `jsonb`, so fresh installs no longer fail on non-Postgres databases.
+- Dashboard "Load more" now requires a valid cursor; a stale `?page=` or malformed cursor returns an empty page instead of re-serving (and duplicating) page one.
+- Creating an annotation while a panel filter is active no longer shows the new card under a non-matching filter.
 - CLI test load order so the complete suite can run in one process.
 - Repeated Turbo execution no longer replaces the toolbar singleton or leaks navigation listeners.
 

@@ -667,7 +667,9 @@
       this.annotations.push(annotation);
       this._saveToStorage();
       this._renderPin(annotation);
-      this._renderCard(annotation);
+      // Rebuild (not append) so a new card honors the active panel filter —
+      // e.g. a pending annotation must not show while "Resolved" is selected.
+      this._rebuildList();
       this._updateCount();
       this._closePopup();
       this._pushToServer(annotation);
