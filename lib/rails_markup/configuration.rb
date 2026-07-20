@@ -21,9 +21,17 @@ module RailsMarkup
     # Accent color for the toolbar FAB and UI elements.
     attr_reader :toolbar_accent
 
-    # Render the annotation toolbar and FAB.
+    # Render the annotation toolbar system at all (FAB, panel, pins, sync).
+    # Set to false to disable rails-markup entirely for a request/environment.
     # Default: true
     attr_accessor :toolbar_enabled
+
+    # Show the floating action button (FAB) specifically.
+    # When false, the FAB is hidden but the toolbar system stays active — pins
+    # still render and the panel is reachable via its toggle. Use when the host
+    # provides its own trigger or wants read-only pins. Requires toolbar_enabled.
+    # Default: true
+    attr_accessor :fab_visible
 
     # URL path for "Back to app" link in the dashboard header.
     # Set to nil to hide the link.
@@ -73,6 +81,7 @@ module RailsMarkup
       @per_page = 25
       @toolbar_accent = "indigo"
       @toolbar_enabled = true
+      @fab_visible = true
       @toolbar_position = "bl"
       @toolbar_size = "default"
       @return_url = nil

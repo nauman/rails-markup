@@ -18,8 +18,12 @@ RailsMarkup.configure do |config|
   # Toolbar accent color: "indigo", "amber", "blue", "emerald", "rose"
   # config.toolbar_accent = "indigo"
 
-  # Show the annotation toolbar and FAB (default: true)
+  # Render the annotation toolbar system at all — FAB, panel, pins, sync (default: true)
   # config.toolbar_enabled = true
+
+  # Show the floating action button specifically. When false the FAB is hidden
+  # but pins still render and the panel stays reachable (default: true)
+  # config.fab_visible = true
 
   # FAB button position: "bl" (bottom-left), "br" (bottom-right),
   # "tl" (top-left), "tr" (top-right). Default: "bl"

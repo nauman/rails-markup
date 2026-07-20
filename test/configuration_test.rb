@@ -34,6 +34,18 @@ class ConfigurationTest < ActiveSupport::TestCase
     assert_not config.toolbar_enabled
   end
 
+  test "fab is visible by default" do
+    assert RailsMarkup::Configuration.new.fab_visible
+  end
+
+  test "fab can be hidden independently of toolbar_enabled" do
+    config = RailsMarkup::Configuration.new
+    config.fab_visible = false
+
+    assert_not config.fab_visible
+    assert config.toolbar_enabled, "hiding the FAB must not disable the toolbar system"
+  end
+
   test "defaults api_token to nil" do
     config = RailsMarkup::Configuration.new
     assert_nil config.api_token

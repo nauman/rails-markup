@@ -22,7 +22,7 @@ class SetupWizardTest < Minitest::Test
     wizard.init
 
     view = wizard.view
-    assert_match(/Step 1\/7/, view)
+    assert_match(/Step 1\/8/, view)
     assert_match(/Toolbar Accent/, view)
     assert_match(/indigo/, view)
   end
@@ -52,7 +52,7 @@ class SetupWizardTest < Minitest::Test
     wizard.update(key_msg(:enter))
 
     view = wizard.view
-    assert_match(/Step 2\/7/, view)
+    assert_match(/Step 2\/8/, view)
     assert_match(/Toolbar Position/, view)
     assert_equal "indigo", wizard.choices[:toolbar_accent]
   end
@@ -70,23 +70,27 @@ class SetupWizardTest < Minitest::Test
     # Step 3: size — select slim (first option)
     wizard.update(key_msg(:enter))
 
-    # Step 4: screenshots — select Yes (first option)
+    # Step 4: fab — select Yes (first option)
     wizard.update(key_msg(:enter))
 
-    # Step 5: URL — type a URL and press enter
+    # Step 5: screenshots — select Yes (first option)
+    wizard.update(key_msg(:enter))
+
+    # Step 6: URL — type a URL and press enter
     "https://myapp.com".each_char { |c| wizard.update(key_msg(:rune, c)) }
     wizard.update(key_msg(:enter))
 
-    # Step 6: scope — select local (first option)
+    # Step 7: scope — select local (first option)
     wizard.update(key_msg(:enter))
 
-    # Step 7: confirm — press Enter to confirm
+    # Step 8: confirm — press Enter to confirm
     _, cmd = wizard.update(key_msg(:enter))
 
     assert wizard.completed
     assert_equal "indigo", wizard.choices[:toolbar_accent]
     assert_equal "bl", wizard.choices[:toolbar_position]
     assert_equal "slim", wizard.choices[:toolbar_size]
+    assert_equal true, wizard.choices[:fab_visible]
     assert_equal true, wizard.choices[:enable_screenshots]
     assert_equal "https://myapp.com", wizard.choices[:url]
     assert_equal "local", wizard.choices[:scope]
@@ -97,6 +101,7 @@ class SetupWizardTest < Minitest::Test
     content = File.read(init_path)
     assert_match(/config\.toolbar_accent = "indigo"/, content)
     assert_match(/config\.toolbar_position = "bl"/, content)
+    assert_match(/config\.fab_visible = true/, content)
 
     # .mcp.json should have been written (local scope)
     mcp_path = File.join(@dir, ".mcp.json")
@@ -110,14 +115,14 @@ class SetupWizardTest < Minitest::Test
     wizard.init
 
     # Steps 1-4: select first option
-    4.times { wizard.update(key_msg(:enter)) }
+    5.times { wizard.update(key_msg(:enter)) }
 
     # Step 5: URL — skip
     wizard.update(key_msg(:enter))
 
-    # Step 6: scope — should show options
+    # Step 7: scope — should show options
     view = wizard.view
-    assert_match(/Step 6\/7/, view)
+    assert_match(/Step 7\/8/, view)
     assert_match(/MCP Server Scope/, view)
     assert_match(/This project only/, view)
     assert_match(/Claude Code/, view)
@@ -129,7 +134,7 @@ class SetupWizardTest < Minitest::Test
     wizard.init
 
     # Steps 1-4: select first option
-    4.times { wizard.update(key_msg(:enter)) }
+    5.times { wizard.update(key_msg(:enter)) }
 
     # Step 5: URL — skip
     wizard.update(key_msg(:enter))
@@ -146,7 +151,7 @@ class SetupWizardTest < Minitest::Test
     wizard.init
 
     # Steps 1-4: select first option
-    4.times { wizard.update(key_msg(:enter)) }
+    5.times { wizard.update(key_msg(:enter)) }
 
     # Step 5: URL — skip
     wizard.update(key_msg(:enter))
@@ -174,14 +179,14 @@ class SetupWizardTest < Minitest::Test
     wizard.init
 
     # Steps 1-4: select first option
-    4.times { wizard.update(key_msg(:enter)) }
+    5.times { wizard.update(key_msg(:enter)) }
 
     # Step 5: URL — just press enter to skip
     wizard.update(key_msg(:enter))
 
     # Should be on scope step
     view = wizard.view
-    assert_match(/Step 6\/7/, view)
+    assert_match(/Step 7\/8/, view)
     assert_nil wizard.choices[:url]
   end
 

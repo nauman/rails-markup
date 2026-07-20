@@ -13,6 +13,7 @@
       accent: "<%= j(RailsMarkup.config.toolbar_accent) %>",
       position: "<%= j(RailsMarkup.config.toolbar_position) %>",
       size: "<%= j(RailsMarkup.config.toolbar_size) %>",
+      fabVisible: <%= RailsMarkup.config.fab_visible ? "true" : "false" %>,
       enableScreenshots: <%= RailsMarkup.config.enable_screenshots ? "true" : "false" %>,
       healthInterval: <%= RailsMarkup.config.health_interval %>
     };

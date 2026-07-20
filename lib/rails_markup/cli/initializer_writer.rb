@@ -5,9 +5,10 @@ require_relative "base"
 module RailsMarkup
   class Cli
     # Reads/writes config/initializers/rails_markup.rb with upsert semantics.
-    # Handles toolbar_accent, toolbar_position, toolbar_size, enable_screenshots.
+    # Handles toolbar_accent, toolbar_position, toolbar_size, enable_screenshots,
+    # toolbar_enabled, fab_visible.
     class InitializerWriter
-      MANAGED_KEYS = %w[toolbar_accent toolbar_position toolbar_size enable_screenshots].freeze
+      MANAGED_KEYS = %w[toolbar_accent toolbar_position toolbar_size enable_screenshots toolbar_enabled fab_visible].freeze
 
       def initialize(dir: Dir.pwd)
         @path = File.join(dir, "config", "initializers", "rails_markup.rb")

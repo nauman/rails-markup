@@ -39,6 +39,7 @@
     accent: "indigo",
     position: "bl",
     size: "default",
+    fabVisible: true,
     enableScreenshots: true,
 
     // DOM refs (set in init)
@@ -50,6 +51,7 @@
       this.accent = opts.accent || "indigo";
       this.position = opts.position || "bl";
       this.size = opts.size || "default";
+      this.fabVisible = opts.fabVisible !== false;
       this.enableScreenshots = opts.enableScreenshots !== false;
       this.healthIntervalMs = (opts.healthInterval || 60) * 1000;
 
@@ -199,7 +201,7 @@
         : `${isTop ? 'top' : 'bottom'}:${fabSize.dim + 32}px;left:24px;`;
 
       root.innerHTML = `
-        <button class="rm-fab" id="rm-fab" style="${fabPos}width:${fabSize.dim}px;height:${fabSize.dim}px;background:${accentBg};color:#fff;" title="Toggle annotation mode" aria-label="Toggle annotation mode" aria-expanded="false" aria-controls="rm-panel">
+        <button class="rm-fab" id="rm-fab" style="${fabPos}width:${fabSize.dim}px;height:${fabSize.dim}px;background:${accentBg};color:#fff;${this.fabVisible ? "" : "display:none;"}" title="Toggle annotation mode" aria-label="Toggle annotation mode" aria-expanded="false" aria-controls="rm-panel">
           <svg viewBox="0 0 24 24" style="width:${fabSize.icon}px;height:${fabSize.icon}px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
           <span class="rm-fab-badge" id="rm-fab-badge"></span>
         </button>

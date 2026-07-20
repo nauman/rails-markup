@@ -9,11 +9,11 @@ require_relative "initializer_writer"
 module RailsMarkup
   class Cli
     # Interactive TUI setup wizard using Bubbletea's Elm architecture.
-    # 7-step state machine: accent → position → size → screenshots → url → scope → confirm
+    # State machine: accent → position → size → fab → screenshots → url → scope → confirm
     class SetupWizard
       include Bubbletea::Model
 
-      STEPS = %i[accent position size screenshots url scope confirm].freeze
+      STEPS = %i[accent position size fab screenshots url scope confirm].freeze
 
       STEP_CONFIG = {
         accent: {
@@ -32,6 +32,12 @@ module RailsMarkup
           type: :select,
           options: %w[slim compact default],
           labels: { "slim" => "Slim (32px)", "compact" => "Compact (40px)", "default" => "Default (48px)" }
+        },
+        fab: {
+          title: "Show Floating Button",
+          type: :select,
+          options: %w[yes no],
+          labels: { "yes" => "Yes — show the FAB", "no" => "No — hide the FAB (pins still show)" }
         },
         screenshots: {
           title: "Enable Screenshots",
@@ -187,6 +193,7 @@ module RailsMarkup
         when :accent      then @choices[:toolbar_accent] = value
         when :position    then @choices[:toolbar_position] = value
         when :size        then @choices[:toolbar_size] = value
+        when :fab         then @choices[:fab_visible] = (value == "yes")
         when :screenshots then @choices[:enable_screenshots] = (value == "yes")
         when :url         then @choices[:url] = value
         when :scope       then @choices[:scope] = value
