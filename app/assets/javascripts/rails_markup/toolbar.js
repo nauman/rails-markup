@@ -1002,6 +1002,7 @@
       const prefix = "rm-annotations:";
       const migratedKeys = [];
       const seenIds = new Set(this.annotations.map(a => a.id));
+      const consolidatedClientIds = new Set(this.annotations.map(a => a.clientId).filter(clientId => this._validClientId(clientId)));
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && key.startsWith(prefix)) {
@@ -1010,7 +1011,9 @@
             if (data && Array.isArray(data.annotations)) {
               data.annotations.forEach((a, index) => {
                 const fingerprint = this._legacyMigrationFingerprint(key, index, a);
-                if (this._validClientId(this.legacyMigrations[fingerprint])) a.clientId = this.legacyMigrations[fingerprint];
+                const migratedClientId = this.legacyMigrations[fingerprint];
+                if (this._validClientId(migratedClientId) && consolidatedClientIds.has(migratedClientId)) return;
+                if (this._validClientId(migratedClientId)) a.clientId = migratedClientId;
                 Object.defineProperty(a, "_legacyMigrationFingerprint", { configurable: true, value: fingerprint });
                 // Legacy ids were per-page counters, so different pages can reuse
                 // the same id. Reassign a fresh id on collision instead of

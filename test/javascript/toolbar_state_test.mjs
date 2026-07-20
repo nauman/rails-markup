@@ -238,6 +238,29 @@ test("legacy cleanup retries idempotently when one source key cannot be removed"
   assert.deepEqual(Object.keys(harness.toolbar.outbox).sort(), [uuidA, uuidB]);
 });
 
+test("retained legacy source cannot overwrite consolidated edits on cleanup retry", (t) => {
+  const harness = createToolbarHarness({
+    uuids: [uuidA],
+    storage: {
+      "rm-annotations": { annotations: [], nextId: 1, outbox: {} },
+      "rm-annotations:/legacy": { annotations: [{ id: 1, comment: "Stale source", pathname: "/legacy" }] }
+    }
+  });
+  t.after(() => harness.reset());
+  harness.failNextStorageRemoval("rm-annotations:/legacy", new Error("remove denied"));
+  harness.toolbar._loadFromStorage();
+
+  harness.toolbar.annotations[0].comment = "Edited desired state";
+  harness.toolbar.outbox[uuidA].annotation.comment = "Edited desired state";
+  harness.toolbar._saveToStorage();
+  harness.toolbar._loadFromStorage();
+
+  assert.equal(harness.window.localStorage.getItem("rm-annotations:/legacy"), null);
+  assert.equal(harness.toolbar.annotations.length, 1);
+  assert.equal(harness.toolbar.annotations[0].comment, "Edited desired state");
+  assert.equal(harness.toolbar.outbox[uuidA].annotation.comment, "Edited desired state");
+});
+
 test("duplicate client IDs collapse to the deterministically newest local record", (t) => {
   const harness = createToolbarHarness({
     storage: {
