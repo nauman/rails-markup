@@ -31,7 +31,11 @@
     _outboxFlushScheduled: false,
     _outboxFlushTimer: null,
     _flushPromise: null,
+    _flushAfterPullPromise: null,
     _healthPromise: null,
+    _pullPromise: null,
+    _pullPageUrl: null,
+    _pullNeeded: true,
     _syncRetryTimer: null,
     _syncRetryAttempt: 0,
     _syncRetryDelay: 0,
@@ -414,7 +418,10 @@
       this._rebuildList();
 
       // Re-init session for new URL
-      if (this.serverOnline) this._initSession();
+      this._pullNeeded = true;
+      if (this.serverOnline) {
+        this._synchronizeCurrentPage(true).catch(error => console.warn("[rails-markup] page sync failed:", error));
+      }
     },
 
     _onTurboFrameRender() {
@@ -1136,6 +1143,15 @@
 
     _flushOutbox() {
       if (this._flushPromise) return this._flushPromise;
+      if (this._pullPromise) {
+        if (!this._flushAfterPullPromise) {
+          this._flushAfterPullPromise = this._pullPromise.then(() => {
+            this._flushAfterPullPromise = null;
+            return this._flushOutbox();
+          });
+        }
+        return this._flushAfterPullPromise;
+      }
       if (!navigator.onLine || !this.serverOnline) return Promise.resolve();
       if (this._syncRetryTimer) return Promise.resolve();
 
@@ -1312,6 +1328,11 @@
     },
 
     _mergeSuccessfulUpsert(annotation, server, sentDirtyFields) {
+      if (this._serverRepresentationIsStale(annotation, server)) {
+        annotation.dirtyFields = (annotation.dirtyFields || []).filter(field => !sentDirtyFields.includes(field));
+        annotation.syncState = "synced";
+        return;
+      }
       annotation.serverId = server.id;
       annotation.userId = server.userId;
       annotation.authorName = server.authorName;
@@ -1650,6 +1671,173 @@
 
     // ---- Server sync ----
 
+    _pullAnnotations() {
+      const pageUrl = this._pageUrl();
+      if (this._pullPromise && this._pullPageUrl === pageUrl) return this._pullPromise;
+
+      const previousPull = this._pullPromise;
+      const operation = previousPull
+        ? previousPull.then(() => this._performAnnotationPull(pageUrl))
+        : this._performAnnotationPull(pageUrl);
+      let trackedPull;
+      trackedPull = operation.finally(() => {
+        if (this._pullPromise !== trackedPull) return;
+        this._pullPromise = null;
+        this._pullPageUrl = null;
+      });
+      this._pullPageUrl = pageUrl;
+      this._pullPromise = trackedPull;
+      return trackedPull;
+    },
+
+    _performAnnotationPull(pageUrl) {
+      return this._runAnnotationPull(pageUrl)
+        .then(complete => {
+          this._pullNeeded = !complete;
+          return complete;
+        })
+        .catch(() => {
+          this._pullNeeded = true;
+          return false;
+        });
+    },
+
+    async _runAnnotationPull(pageUrl) {
+      const url = this._sameOriginEndpointUrl(`/annotations?page_url=${encodeURIComponent(pageUrl)}`);
+      if (!url) {
+        this._setSyncUnavailable("Sync unavailable: endpoint must be same-origin");
+        return false;
+      }
+
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+        credentials: "same-origin",
+        redirect: "manual",
+        signal: AbortSignal.timeout(5000)
+      });
+      if (!response.ok || response.status >= 300 || response.type === "opaqueredirect") return false;
+      const contentType = response.headers.get("Content-Type") || "";
+      if (!contentType.toLowerCase().includes("application/json")) return false;
+
+      let records;
+      try { records = await response.json(); }
+      catch { return false; }
+      if (pageUrl !== this._pageUrl() || !this._validPullRecords(records, pageUrl)) return false;
+      return this._reconcilePull(pageUrl, records);
+    },
+
+    _validPullRecords(records, pageUrl) {
+      if (!Array.isArray(records)) return false;
+      const clientIds = new Set();
+      return records.every(record => {
+        const clientId = record?.clientId;
+        if (!this._validClientId(clientId) || clientIds.has(clientId)) return false;
+        clientIds.add(clientId);
+        return record.pageUrl === pageUrl && this._validServerAnnotation(record, clientId);
+      });
+    },
+
+    _reconcilePull(pageUrl, records) {
+      const committed = this._commitLocalStateChange(() => {
+        const presentClientIds = new Set(records.map(record => record.clientId));
+        records.forEach(server => {
+          const outboxEntry = this.outbox[server.clientId];
+          if (outboxEntry?.type === "delete") return;
+
+          const annotation = this.annotations.find(candidate => candidate.clientId === server.clientId);
+          if (annotation) this._mergePulledAnnotation(annotation, server, outboxEntry);
+          else this.annotations.push(this._annotationFromServer(server));
+        });
+
+        this.annotations = this.annotations.filter(annotation => {
+          const annotationPage = annotation.pageUrl || annotation.pathname;
+          if (annotationPage !== pageUrl || presentClientIds.has(annotation.clientId)) return true;
+          return Boolean(this.outbox[annotation.clientId]) || annotation.syncState !== "synced";
+        });
+
+        this._assignDisplayIds();
+        Object.entries(this.outbox).forEach(([clientId, entry]) => {
+          if (entry?.type !== "upsert") return;
+          const annotation = this.annotations.find(candidate => candidate.clientId === clientId);
+          if (!annotation) return;
+          entry.annotation = this._desiredState(annotation);
+          entry.dirtyFields = (annotation.dirtyFields || []).slice();
+        });
+      });
+      if (!committed) return false;
+      this._renderPins();
+      this._rebuildList();
+      this._updateCount();
+      return true;
+    },
+
+    _mergePulledAnnotation(annotation, server, outboxEntry) {
+      if (this._serverRepresentationIsStale(annotation, server)) return;
+      const dirtyFields = new Set(this._mergeDirtyFields(annotation.dirtyFields || [], outboxEntry?.dirtyFields || []));
+      const browserFields = [
+        ["content", "comment"],
+        ["intent", "intent"],
+        ["severity", "severity"],
+        ["selected_text", "selectedText"],
+        ["target", "element"],
+        ["metadata", "metadata"],
+        ["status", "status"]
+      ];
+      browserFields.forEach(([dirtyField, localField]) => {
+        if (dirtyFields.has(dirtyField)) return;
+        const serverField = {
+          content: "content", selected_text: "selectedText", target: "target"
+        }[dirtyField] || dirtyField;
+        annotation[localField] = this._immutableCopy(server[serverField]);
+      });
+      if (!dirtyFields.has("page_url")) {
+        annotation.pageUrl = server.pageUrl;
+        annotation.pathname = server.pageUrl;
+      }
+      annotation.serverId = server.id;
+      annotation.userId = server.userId;
+      annotation.authorName = server.authorName;
+      annotation.createdAt = server.createdAt;
+      annotation.serverUpdatedAt = server.updatedAt;
+      annotation.thread = this._immutableCopy(server.thread);
+      annotation.dirtyFields = Array.from(dirtyFields);
+      annotation.syncState = outboxEntry ? (outboxEntry.syncState || "pending") : "synced";
+      if (!dirtyFields.has("metadata") && server.metadata?.url) annotation.url = server.metadata.url;
+    },
+
+    _annotationFromServer(server) {
+      return {
+        id: null,
+        clientId: server.clientId,
+        serverId: server.id,
+        userId: server.userId,
+        authorName: server.authorName,
+        syncState: "synced",
+        serverUpdatedAt: server.updatedAt,
+        dirtyFields: [],
+        revision: 0,
+        comment: server.content,
+        intent: server.intent,
+        severity: server.severity,
+        status: server.status,
+        selectedText: server.selectedText,
+        element: this._immutableCopy(server.target),
+        metadata: this._immutableCopy(server.metadata),
+        pathname: server.pageUrl,
+        pageUrl: server.pageUrl,
+        url: server.metadata?.url || server.pageUrl,
+        thread: this._immutableCopy(server.thread),
+        createdAt: server.createdAt
+      };
+    },
+
+    _serverRepresentationIsStale(annotation, server) {
+      const localTimestamp = Date.parse(annotation.serverUpdatedAt || "");
+      const serverTimestamp = Date.parse(server.updatedAt || "");
+      return Number.isFinite(localTimestamp) && Number.isFinite(serverTimestamp) && serverTimestamp < localTimestamp;
+    },
+
     _onVisibilityChange() {
       if (document.hidden) {
         // Tab hidden — pause health checks to save resources
@@ -1675,11 +1863,17 @@
 
     async _runHealthCheck() {
       try {
-        const resp = await fetch(this.endpoint + "/health", { signal: AbortSignal.timeout(3000) });
+        const healthUrl = this._sameOriginEndpointUrl("/health");
+        if (!healthUrl) {
+          this._setSyncUnavailable("Sync unavailable: endpoint must be same-origin");
+          return;
+        }
+        const resp = await fetch(healthUrl, { signal: AbortSignal.timeout(3000) });
         const was = this.serverOnline;
         this.serverOnline = resp.ok;
         this._updateStatus();
         if (!was && this.serverOnline) await this._initSession();
+        if (this.serverOnline && (!was || this._pullNeeded)) await this._pullAnnotations();
         if (this.serverOnline) await this._flushOutbox();
       } catch {
         this.serverOnline = false;
@@ -1705,6 +1899,13 @@
           this.sessionId = data.id;
         }
       } catch (e) { console.warn("[rails-markup] session init failed:", e); }
+    },
+
+    async _synchronizeCurrentPage(initializeSession) {
+      if (!this.serverOnline) return;
+      if (initializeSession) await this._initSession();
+      await this._pullAnnotations();
+      await this._flushOutbox();
     },
 
     async _pushToServer(annotation) {
