@@ -123,7 +123,7 @@
         .rm-toast-container { position:fixed; z-index:9983; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
         .rm-pins-container { position:absolute; top:0; left:0; width:100%; z-index:9979; pointer-events:none; }
         .rm-pin { pointer-events:auto; }
-        .rm-popup { display:none; position:fixed; z-index:9982; width:360px; background:rgba(255,255,255,0.95); backdrop-filter:blur(12px); border-radius:16px; box-shadow:0 25px 50px rgba(0,0,0,0.1); border:1px solid rgba(229,231,235,0.8); padding:16px; }
+        .rm-popup { display:none; position:fixed; z-index:9982; width:360px; max-width:calc(100vw - 24px); background:rgba(255,255,255,0.95); backdrop-filter:blur(12px); border-radius:16px; box-shadow:0 25px 50px rgba(0,0,0,0.1); border:1px solid rgba(229,231,235,0.8); padding:16px; }
         .rm-popup textarea { width:100%; font-size:13px; border:1px solid #e5e7eb; border-radius:12px; padding:12px; resize:none; outline:none; font-family:inherit; transition:border-color 0.15s,box-shadow 0.15s; }
         .rm-popup textarea:focus { border-color:#818cf8; box-shadow:0 0 0 3px rgba(99,102,241,0.1); }
         .rm-popup select { font-size:11px; font-weight:500; border:1px solid #e5e7eb; border-radius:8px; padding:6px 24px 6px 8px; background:#fff; appearance:none; cursor:pointer; }
@@ -136,7 +136,7 @@
         .rm-btn-cancel:hover { color:#6b7280; }
         .rm-btn-submit { padding:6px 16px; font-size:12px; font-weight:500; color:#fff; border:none; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
         .rm-btn-submit kbd { font-size:9px; opacity:0.6; font-family:sans-serif; }
-        .rm-panel { display:none; position:fixed; z-index:9981; width:380px; max-height:60vh; background:rgba(255,255,255,0.95); backdrop-filter:blur(12px); border-radius:16px; box-shadow:0 25px 50px rgba(0,0,0,0.1); border:1px solid rgba(229,231,235,0.8); flex-direction:column; }
+        .rm-panel { display:none; position:fixed; z-index:9981; width:380px; max-width:calc(100vw - 48px); max-height:60vh; background:rgba(255,255,255,0.95); backdrop-filter:blur(12px); border-radius:16px; box-shadow:0 25px 50px rgba(0,0,0,0.1); border:1px solid rgba(229,231,235,0.8); flex-direction:column; }
         .rm-panel-header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid #f3f4f6; }
         .rm-panel-header h3 { font-size:14px; font-weight:600; color:#1f2937; }
         .rm-panel-count { min-width:20px; text-align:center; padding:2px 6px; font-size:10px; font-weight:600; border-radius:10px; }
@@ -973,18 +973,21 @@
       // Find and merge any legacy per-page annotation keys
       const prefix = "rm-annotations:";
       const keysToRemove = [];
+      const seenIds = new Set(this.annotations.map(a => a.id));
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && key.startsWith(prefix)) {
           try {
             const data = JSON.parse(localStorage.getItem(key));
             if (data.annotations && data.annotations.length > 0) {
-              const existingIds = new Set(this.annotations.map(a => a.id));
               data.annotations.forEach(a => {
-                if (!existingIds.has(a.id)) {
-                  this.annotations.push(a);
-                  if (a.id >= this.nextId) this.nextId = a.id + 1;
-                }
+                // Legacy ids were per-page counters, so different pages can reuse
+                // the same id. Reassign a fresh id on collision instead of
+                // dropping the annotation (which silently lost data).
+                if (seenIds.has(a.id)) a.id = this.nextId++;
+                seenIds.add(a.id);
+                this.annotations.push(a);
+                if (a.id >= this.nextId) this.nextId = a.id + 1;
               });
             }
           } catch {}
