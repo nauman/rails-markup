@@ -4,3 +4,6 @@ Gemfile.lock
 pkg/
 tmp/
 test/dummy/log/
+
+# System-test scratch DB
+test/dummy/db/*.sqlite3
