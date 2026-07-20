@@ -1259,6 +1259,9 @@
 
     _mergeSuccessfulUpsert(annotation, server, sentDirtyFields) {
       annotation.serverId = server.id;
+      annotation.userId = server.userId;
+      annotation.authorName = server.authorName;
+      annotation.createdAt = server.createdAt;
       annotation.serverUpdatedAt = server.updatedAt || annotation.serverUpdatedAt;
       annotation.comment = server.content;
       annotation.intent = server.intent;

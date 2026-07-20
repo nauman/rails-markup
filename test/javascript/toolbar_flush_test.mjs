@@ -56,6 +56,8 @@ function serverRepresentation(annotation, overrides = {}) {
   return {
     id: String(annotation.id + 100),
     clientId: annotation.clientId,
+    userId: 77,
+    authorName: "Server Owner",
     content: annotation.comment,
     intent: annotation.intent,
     severity: annotation.severity,
@@ -222,6 +224,9 @@ test("successful PUT stores the full response, server id, and clears only sent d
   await harness.toolbar._flushOutbox();
   const saved = harness.toolbar.annotations[0];
   assert.equal(saved.serverId, "91");
+  assert.equal(saved.userId, 77);
+  assert.equal(saved.authorName, "Server Owner");
+  assert.equal(saved.createdAt, "2026-07-20T00:00:00Z");
   assert.equal(saved.comment, "Canonical");
   assert.equal(saved.status, "resolved");
   assert.deepEqual(JSON.parse(JSON.stringify(saved.thread)), [{ role: "agent", message: "Done" }]);
