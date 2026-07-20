@@ -660,6 +660,10 @@
       const annotation = {
         id: this.nextId++,
         clientId: this._newClientId(),
+        serverId: null,
+        syncState: "pending",
+        serverUpdatedAt: null,
+        dirtyFields: [],
         comment, intent, severity,
         element: this._currentElement,
         selectedText: this.selectedText || null,
@@ -955,10 +959,12 @@
       try {
         // Save all annotations to a single global key
         localStorage.setItem(this._storageKey(), JSON.stringify({ annotations: this.annotations, nextId: this.nextId, outbox: this.outbox }));
-        // Also keep per-page key for backwards compat (migrate on next load)
-        localStorage.removeItem(this._pageStorageKey());
+        return true;
       }
-      catch (e) { console.warn("[rails-markup] save failed:", e); }
+      catch (e) {
+        console.warn("[rails-markup] save failed:", e);
+        return false;
+      }
     },
 
     _loadFromStorage() {
@@ -974,9 +980,9 @@
           this.outbox = data.outbox && typeof data.outbox === "object" ? data.outbox : {};
         }
         // Migrate any old per-page annotations into global store
-        this._migratePageAnnotations();
+        const migratedKeys = this._migratePageAnnotations();
         this._normalizeStoredState();
-        this._saveToStorage();
+        if (this._saveToStorage()) migratedKeys.forEach(key => localStorage.removeItem(key));
         this._rebuildList();
         this._updateCount();
       } catch (e) { console.warn("[rails-markup] load failed:", e); }
@@ -985,14 +991,14 @@
     _migratePageAnnotations() {
       // Find and merge any legacy per-page annotation keys
       const prefix = "rm-annotations:";
-      const keysToRemove = [];
+      const migratedKeys = [];
       const seenIds = new Set(this.annotations.map(a => a.id));
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && key.startsWith(prefix)) {
           try {
             const data = JSON.parse(localStorage.getItem(key));
-            if (data.annotations && data.annotations.length > 0) {
+            if (data && Array.isArray(data.annotations)) {
               data.annotations.forEach(a => {
                 // Legacy ids were per-page counters, so different pages can reuse
                 // the same id. Reassign a fresh id on collision instead of
@@ -1002,21 +1008,30 @@
                 this.annotations.push(a);
                 if (a.id >= this.nextId) this.nextId = a.id + 1;
               });
+              migratedKeys.push(key);
             }
           } catch {}
-          keysToRemove.push(key);
         }
       }
-      keysToRemove.forEach(k => localStorage.removeItem(k));
-      return keysToRemove.length > 0;
+      return migratedKeys;
     },
 
     _normalizeStoredState() {
       if (!this.outbox || typeof this.outbox !== "object" || Array.isArray(this.outbox)) this.outbox = {};
 
+      const replacementClientIds = new Map();
+      const usedClientIds = new Set(this.annotations.map(annotation => annotation.clientId).filter(clientId => this._validClientId(clientId)));
       const normalized = this.annotations.map((annotation, index) => {
-        if (!annotation.clientId) {
-          annotation.clientId = this._newClientId();
+        const originalClientId = annotation.clientId;
+        if (!this._validClientId(originalClientId)) {
+          let replacementClientId = originalClientId ? replacementClientIds.get(originalClientId) : null;
+          if (!replacementClientId) {
+            do { replacementClientId = this._newClientId(); } while (usedClientIds.has(replacementClientId));
+            usedClientIds.add(replacementClientId);
+            if (originalClientId) replacementClientIds.set(originalClientId, replacementClientId);
+          }
+          annotation.clientId = replacementClientId;
+          this._rekeyOutbox(originalClientId, replacementClientId);
         }
         if (annotation.serverId == null) annotation.serverId = annotation.server_id ?? null;
         if (annotation.serverUpdatedAt == null) annotation.serverUpdatedAt = annotation.server_updated_at ?? null;
@@ -1095,6 +1110,19 @@
 
     _desiredState(annotation) {
       return JSON.parse(JSON.stringify(annotation));
+    },
+
+    _validClientId(clientId) {
+      return typeof clientId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientId);
+    },
+
+    _rekeyOutbox(oldClientId, newClientId) {
+      if (!oldClientId || !this.outbox[oldClientId]) return;
+      const entry = this.outbox[oldClientId];
+      delete this.outbox[oldClientId];
+      if (entry.annotation) entry.annotation.clientId = newClientId;
+      if (entry.clientId) entry.clientId = newClientId;
+      this.outbox[newClientId] = entry;
     },
 
     _newClientId() {

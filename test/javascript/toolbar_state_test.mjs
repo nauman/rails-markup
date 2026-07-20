@@ -92,6 +92,33 @@ test("an existing mapping or outbox is not requeued or overwritten", (t) => {
   assert.deepEqual(JSON.parse(JSON.stringify(harness.toolbar.outbox)), { [uuidA]: existingEntry });
 });
 
+test("invalid legacy client IDs are replaced and their outbox entries rekeyed", (t) => {
+  const invalidClientId = "rm-legacy-client";
+  const harness = createToolbarHarness({
+    uuids: [uuidA],
+    storage: {
+      "rm-annotations": {
+        annotations: [{ id: 1, clientId: invalidClientId, comment: "Legacy", pathname: "/" }],
+        nextId: 2,
+        outbox: {
+          [invalidClientId]: {
+            type: "upsert",
+            annotation: { clientId: invalidClientId, comment: "Legacy" },
+            dirtyFields: ["content"]
+          }
+        }
+      }
+    }
+  });
+  t.after(() => harness.reset());
+
+  harness.toolbar._loadFromStorage();
+
+  assert.equal(harness.toolbar.annotations[0].clientId, uuidA);
+  assert.equal(harness.toolbar.outbox[invalidClientId], undefined);
+  assert.equal(harness.toolbar.outbox[uuidA].annotation.clientId, uuidA);
+});
+
 test("legacy per-page migration preserves records with colliding local IDs", (t) => {
   const harness = createToolbarHarness({
     uuids: [uuidA, uuidB, "33333333-3333-4333-8333-333333333333"],
@@ -110,6 +137,41 @@ test("legacy per-page migration preserves records with colliding local IDs", (t)
   assert.equal(Object.keys(harness.toolbar.outbox).length, 3);
   assert.equal(harness.window.localStorage.getItem("rm-annotations:/one"), null);
   assert.equal(harness.window.localStorage.getItem("rm-annotations:/two"), null);
+});
+
+test("legacy migration preserves malformed and unrecognized prefixed keys", (t) => {
+  const harness = createToolbarHarness({
+    uuids: [uuidA],
+    storage: {
+      "rm-annotations:recognized": { annotations: [{ id: 1, comment: "Migrated", pathname: "/recognized" }] },
+      "rm-annotations:malformed": "{not-json",
+      "rm-annotations:unrecognized": { annotations: "not-an-array" }
+    }
+  });
+  t.after(() => harness.reset());
+
+  harness.toolbar._loadFromStorage();
+
+  assert.equal(harness.window.localStorage.getItem("rm-annotations:recognized"), null);
+  assert.equal(harness.window.localStorage.getItem("rm-annotations:malformed"), "{not-json");
+  assert.notEqual(harness.window.localStorage.getItem("rm-annotations:unrecognized"), null);
+});
+
+test("legacy migration retains source keys when consolidated persistence fails", (t) => {
+  const harness = createToolbarHarness({
+    uuids: [uuidA],
+    storage: {
+      "rm-annotations": { annotations: [], nextId: 1, outbox: {} },
+      "rm-annotations:/legacy": { annotations: [{ id: 1, comment: "Keep me", pathname: "/legacy" }] }
+    }
+  });
+  t.after(() => harness.reset());
+  harness.failNextStorageWrite(new Error("quota exceeded"));
+
+  harness.toolbar._loadFromStorage();
+
+  assert.notEqual(harness.window.localStorage.getItem("rm-annotations:/legacy"), null);
+  assert.equal(harness.storageDocument().annotations.length, 0);
 });
 
 test("duplicate client IDs collapse to the deterministically newest local record", (t) => {
@@ -163,6 +225,25 @@ test("server-only records receive stable collision-free display IDs across reloa
   reloaded.toolbar._loadFromStorage();
   assert.deepEqual(Array.from(reloaded.toolbar.annotations, (annotation) => annotation.id), firstIds);
   assert.equal(reloaded.toolbar.nextId, 7);
+});
+
+test("new UI annotations have the complete sync schema before storage", (t) => {
+  const harness = createToolbarHarness({ uuids: [uuidA] });
+  t.after(() => harness.reset());
+  harness.toolbar._injectStyles();
+  harness.toolbar._injectDOM();
+  harness.window.document.getElementById("rm-popup-input").value = "Created locally";
+  harness.toolbar._currentElement = { selector: "main" };
+
+  harness.toolbar.submitAnnotation();
+
+  const annotation = harness.toolbar.annotations[0];
+  assert.equal(annotation.clientId, uuidA);
+  assert.equal(annotation.serverId, null);
+  assert.equal(annotation.syncState, "pending");
+  assert.equal(annotation.serverUpdatedAt, null);
+  assert.deepEqual(Array.from(annotation.dirtyFields), []);
+  assert.equal(harness.storageDocument().annotations[0].syncState, "pending");
 });
 
 test("harness reset destroys toolbar intervals and global state", (t) => {
