@@ -33,8 +33,10 @@ Gem::Specification.new do |spec|
   spec.add_dependency "webrick", "~> 1.8"
   spec.add_dependency "railties", ">= 7.0"
   spec.add_dependency "activerecord", ">= 7.0"
+  spec.add_dependency "thor", "~> 1.3"
   spec.add_dependency "bubbletea", "~> 0.1"
-  spec.add_dependency "csv"
+  spec.add_dependency "lipgloss", "~> 0.2"
+  spec.add_dependency "csv", "~> 3.3"
 
   spec.metadata["homepage_uri"]    = spec.homepage
   spec.metadata["source_code_uri"] = spec.homepage

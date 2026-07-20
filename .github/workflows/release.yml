@@ -1,0 +1,62 @@
+name: Release to RubyGems
+
+# Triggers on push of a version tag (e.g. v1.2.0). Runs the test suite,
+# builds the .gem, and pushes to rubygems.org — but only when the tag
+# matches RailsMarkup::VERSION (guards against tag/version mismatches).
+#
+# Required repo secret: RUBYGEMS_API_KEY
+#   Create a token at https://rubygems.org/profile/api_keys with the
+#   "push rubygem" scope, then:
+#     gh secret set RUBYGEMS_API_KEY --body "rubygems_xxx" -R inventlist/rails-markup
+#
+# To cut a release:
+#   1. Bump lib/rails_markup/version.rb + add a CHANGELOG.md entry
+#   2. git commit -am "release: vX.Y.Z"
+#   3. git tag vX.Y.Z && git push origin main --tags
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    name: Build + publish ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+
+      - name: Verify tag matches gemspec version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          gem_version=$(ruby -e 'require_relative "lib/rails_markup/version"; puts RailsMarkup::VERSION')
+          if [ "$tag" != "$gem_version" ]; then
+            echo "::error::Tag ($tag) does not match RailsMarkup::VERSION ($gem_version)"
+            exit 1
+          fi
+          echo "Tag $tag matches RailsMarkup::VERSION $gem_version ✓"
+
+      - name: Run tests
+        run: bundle exec rake test
+
+      - name: Build gem
+        run: bundle exec rake build
+
+      - name: Push gem to rubygems.org
+        env:
+          GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+        run: |
+          if [ -z "$GEM_HOST_API_KEY" ]; then
+            echo "::error::RUBYGEMS_API_KEY secret is not set"
+            exit 1
+          fi
+          gem push pkg/rails-markup-*.gem
