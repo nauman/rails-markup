@@ -34,6 +34,7 @@ All notable changes to this project will be documented in this file.
 - Repeated Turbo execution no longer replaces the toolbar singleton or leaks navigation listeners.
 - Legacy numeric/string toolbar IDs now map to deterministic canonical UUIDs scoped by session, preserving exact replay and conflict detection without colliding after local storage is reset.
 - Existing-install UUID backfill remains nullable during mixed-version deployment; invalid rows fail pulls closed and can be repaired idempotently before a later explicit `NOT NULL` contract migration.
+- Client UUIDs are normalized to lowercase across POST/PUT/DELETE paths; repair resolves case-fold collisions deterministically and requires a full, unpredicated, unprefixed unique index.
 
 ## [1.0.0] - 2026-03-12
 

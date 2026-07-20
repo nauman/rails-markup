@@ -112,6 +112,27 @@ module RailsMarkup
       assert_equal "selection", response.parsed_body["selectedText"]
     end
 
+    test "uppercase UUID routes upsert and delete the lowercase logical identity" do
+      lowercase = "ad0a7a44-c458-4b05-b6dc-83e791c2a3fe"
+      uppercase = lowercase.upcase
+
+      put "/feedback/api/annotations/#{uppercase}",
+        params: { content: "Created uppercase", page_url: "/case" }, as: :json
+      assert_response :ok
+      assert_equal lowercase, response.parsed_body["clientId"]
+
+      assert_no_difference "Annotation.count" do
+        put "/feedback/api/annotations/#{lowercase}",
+          params: { content: "Updated lowercase", page_url: "/case" }, as: :json
+      end
+      assert_equal "Updated lowercase", Annotation.find_by!(client_uuid: lowercase).content
+
+      assert_difference "Annotation.count", -1 do
+        delete "/feedback/api/annotations/#{uppercase}", as: :json
+      end
+      assert_response :no_content
+    end
+
     test "put updates the uuid annotation and preserves server owned fields" do
       annotation = Annotation.create!(
         client_uuid: BROWSER_UUID,
@@ -197,6 +218,20 @@ module RailsMarkup
       assert_equal derived_uuid, response.parsed_body["clientId"]
       assert Annotation.valid_client_uuid?(derived_uuid)
       refute_equal "1", derived_uuid
+    end
+
+    test "uppercase canonical compatibility ids replay against lowercase storage" do
+      lowercase = "5af31e48-8a93-4995-b793-09d721a1c960"
+      params = { page_url: "/case", content: "Canonical replay", clientId: lowercase.upcase }
+
+      post session_annotations_path("test-session"), params:, as: :json
+      assert_response :created
+      assert_equal lowercase, response.parsed_body["clientId"]
+
+      assert_no_difference "Annotation.count" do
+        post session_annotations_path("test-session"), params: params.merge(clientId: lowercase), as: :json
+      end
+      assert_response :ok
     end
 
     test "legacy client ids conflict on changed replay within one session" do

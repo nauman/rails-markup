@@ -121,6 +121,15 @@ module RailsMarkup
       assert_includes annotation.errors[:client_uuid], "is invalid"
     end
 
+    test "uppercase canonical UUID input is stored lowercase" do
+      uppercase = "AD0A7A44-C458-4B05-B6DC-83E791C2A3FE"
+
+      annotation = Annotation.create!(content: "Normalized identity", page_url: "/test", client_uuid: uppercase)
+
+      assert_equal uppercase.downcase, annotation.client_uuid
+      assert Annotation.valid_client_uuid?(annotation.client_uuid)
+    end
+
     # --- Scopes ---
 
     test "pending scope returns only pending annotations" do

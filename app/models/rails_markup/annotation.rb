@@ -12,7 +12,8 @@ module RailsMarkup
     STATUSES = %w[pending acknowledged resolved dismissed].freeze
     BROWSER_ATTRIBUTES = %w[content intent severity selected_text target page_url].freeze
     BROWSER_METADATA_KEYS = %w[tool url localId sessionId screenshot].freeze
-    CLIENT_UUID_PATTERN = /\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i
+    CLIENT_UUID_PATTERN = /\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/
+    CLIENT_UUID_INPUT_PATTERN = /\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i
     LEGACY_SESSION_PATTERN = /\Arm-[0-9a-f]{16}\z/i
     LEGACY_CLIENT_ID_LIMIT = 256
     LEGACY_UUID_NAMESPACE = "265e7cf0-8be6-5e21-8f31-a582cfde8646"
@@ -38,6 +39,10 @@ module RailsMarkup
 
     def self.valid_client_uuid?(value)
       value.is_a?(String) && CLIENT_UUID_PATTERN.match?(value)
+    end
+
+    def self.normalize_client_uuid(value)
+      value.downcase if value.is_a?(String) && CLIENT_UUID_INPUT_PATTERN.match?(value)
     end
 
     def self.legacy_client_uuid(session_id:, legacy_client_id:)
@@ -153,7 +158,11 @@ module RailsMarkup
     private
 
     def ensure_client_uuid
-      self.client_uuid = SecureRandom.uuid if client_uuid.blank?
+      self.client_uuid = if client_uuid.blank?
+        SecureRandom.uuid
+      else
+        self.class.normalize_client_uuid(client_uuid) || client_uuid
+      end
     end
 
     def add_thread_entry(role:, message:)

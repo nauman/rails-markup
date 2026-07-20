@@ -160,8 +160,8 @@ module RailsMarkup
       permitted = params.permit(:page_url, :content, :intent, :severity, :selected_text, :selectedText, :clientId, target: {}, metadata: {})
       permitted[:selected_text] ||= permitted.delete(:selectedText)
       requested_client_uuid = permitted.delete(:clientId).to_s.strip
-      if Annotation.valid_client_uuid?(requested_client_uuid)
-        permitted[:client_uuid] = requested_client_uuid
+      if (normalized_client_uuid = Annotation.normalize_client_uuid(requested_client_uuid))
+        permitted[:client_uuid] = normalized_client_uuid
       elsif requested_client_uuid.present?
         permitted[:client_uuid] = Annotation.legacy_client_uuid(
           session_id: params[:session_id], legacy_client_id: requested_client_uuid
@@ -190,7 +190,7 @@ module RailsMarkup
 
     def normalized_route_uuid
       uuid = params[:client_uuid].to_s.strip
-      uuid if Annotation.valid_client_uuid?(uuid)
+      Annotation.normalize_client_uuid(uuid)
     end
 
     def normalized_dirty_fields
