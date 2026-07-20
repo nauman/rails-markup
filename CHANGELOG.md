@@ -27,6 +27,8 @@ All notable changes to this project will be documented in this file.
 - Generated install migration uses `json` on SQLite/MySQL instead of PostgreSQL-only `jsonb`, so fresh installs no longer fail on non-Postgres databases.
 - Dashboard "Load more" now requires a valid cursor; a stale `?page=` or malformed cursor returns an empty page instead of re-serving (and duplicating) page one.
 - Creating an annotation while a panel filter is active no longer shows the new card under a non-matching filter.
+- Kanban board transitions now reload on a rejected server response (previously only network errors were caught, so a 4xx left the card out of sync).
+- Kanban board cards gain a status `<select>` so touch devices can change status without drag-and-drop.
 - CLI test load order so the complete suite can run in one process.
 - Repeated Turbo execution no longer replaces the toolbar singleton or leaks navigation listeners.
 

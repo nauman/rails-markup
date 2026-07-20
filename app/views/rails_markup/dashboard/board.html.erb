@@ -42,6 +42,14 @@
               &middot;
               <span title="<%= annotation.created_at.strftime("%B %d, %Y at %H:%M") %>"><%= time_ago_in_words(annotation.created_at) %></span>
             </div>
+            <%# Touch fallback for drag-and-drop: pick a status directly %>
+            <select class="rm-board-move" data-annotation-id="<%= annotation.id %>"
+                    aria-label="Move annotation to status"
+                    style="margin-top:8px;width:100%;font-size:11px;padding:4px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;color:#6b7280;">
+              <% %w[pending acknowledged resolved dismissed].each do |s| %>
+                <option value="<%= s %>" <%= "selected" if annotation.status == s %>><%= s.capitalize %></option>
+              <% end %>
+            </select>
           </div>
         <% end %>
         <% if @columns[status].empty? %>
@@ -78,31 +86,43 @@
       e.preventDefault();
       col.classList.remove('rm-drag-over');
       const id = e.dataTransfer.getData('text/plain');
-      const newStatus = col.dataset.status;
-      const card = document.querySelector('[data-annotation-id="' + id + '"]');
-      if (!card || card.closest('[data-status]').dataset.status === newStatus) return;
-
-      // Move card in DOM
-      col.querySelector('.rm-board-cards').appendChild(card);
-
-      // Update count badges
-      updateColumnCounts();
-
-      // PATCH to server
-      const basePath = window.location.pathname.replace(/\/board\/?$/, '');
-      fetch(basePath + '/annotations/' + id, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': csrfToken || ''
-        },
-        body: JSON.stringify({ action_type: 'transition', status: newStatus })
-      }).catch(() => {
-        // Revert on error — reload to get correct state
-        window.location.reload();
-      });
+      moveCard(id, col.dataset.status);
     });
   });
+
+  // Touch fallback: status <select> on each card
+  document.querySelectorAll('.rm-board-move').forEach(select => {
+    select.addEventListener('change', () => {
+      moveCard(select.dataset.annotationId, select.value);
+    });
+  });
+
+  function moveCard(id, newStatus) {
+    const card = document.querySelector('[data-annotation-id="' + id + '"]');
+    if (!card || card.closest('[data-status]').dataset.status === newStatus) return;
+
+    // Optimistically move the card to the target column, then reconcile.
+    const targetCol = document.querySelector('.rm-board-column[data-status="' + newStatus + '"]');
+    if (targetCol) targetCol.querySelector('.rm-board-cards').appendChild(card);
+    const select = card.querySelector('.rm-board-move');
+    if (select) select.value = newStatus;
+    updateColumnCounts();
+
+    const basePath = window.location.pathname.replace(/\/board\/?$/, '');
+    fetch(basePath + '/annotations/' + id, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfToken || ''
+      },
+      body: JSON.stringify({ action_type: 'transition', status: newStatus })
+    }).then((resp) => {
+      // A rejected transition (422/401/…) resolves without throwing — resync.
+      if (!resp.ok) window.location.reload();
+    }).catch(() => {
+      window.location.reload();
+    });
+  }
 
   function updateColumnCounts() {
     document.querySelectorAll('.rm-board-column').forEach(col => {

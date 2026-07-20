@@ -74,6 +74,13 @@ module RailsMarkup
       assert_select ".rm-board-column", 4
     end
 
+    test "board cards include a status select as a touch fallback" do
+      get rails_markup.board_path
+      assert_response :success
+      # One move-select per rendered card (drag-and-drop alternative for touch).
+      assert_select ".rm-board-card .rm-board-move"
+    end
+
     # --- Update actions ---
 
     test "acknowledge transitions and redirects" do
