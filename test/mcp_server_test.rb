@@ -42,44 +42,60 @@ class McpServerTest < Minitest::Test
 
   # ── Tools list (8 unified tools) ───────────────────────────
 
-  def test_tools_list_returns_8_tools
-    input = StringIO.new(jsonrpc_request(1, "tools/list"))
-    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
-    mcp.start
-
-    response = parse_output
-    tools = response["result"]["tools"]
-    assert_equal 8, tools.size
-  end
-
-  def test_tools_list_has_unified_names
+  def test_tools_list_advertises_exactly_five_canonical_tools
     input = StringIO.new(jsonrpc_request(1, "tools/list"))
     mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
     mcp.start
 
     names = parse_output["result"]["tools"].map { |t| t["name"] }
     expected = %w[
-      rails_markup_sessions
-      rails_markup_session
-      rails_markup_pending
+      rails_markup_read
       rails_markup_watch
-      rails_markup_acknowledge
-      rails_markup_resolve
-      rails_markup_dismiss
+      rails_markup_transition
       rails_markup_reply
+      rails_markup_dismiss
     ]
     assert_equal expected, names
   end
 
-  def test_pending_tool_has_environment_param
+  def test_canonical_tool_schemas_are_closed_and_unambiguous
     input = StringIO.new(jsonrpc_request(1, "tools/list"))
     mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
     mcp.start
 
-    pending = parse_output["result"]["tools"].find { |t| t["name"] == "rails_markup_pending" }
-    props = pending["inputSchema"]["properties"]
-    assert props.key?("environment"), "pending tool should have environment param"
-    assert_equal %w[development production], props["environment"]["enum"]
+    tools = parse_output["result"]["tools"].to_h { |tool| [tool["name"], tool] }
+    assert tools.values.all? { |tool| tool.dig("inputSchema", "additionalProperties") == false }
+
+    read = tools.fetch("rails_markup_read")["inputSchema"]
+    assert_equal %w[resource], read["required"]
+    assert_equal %w[pending sessions session annotation], read.dig("properties", "resource", "enum")
+    assert_equal %w[development production], read.dig("properties", "environment", "enum")
+    assert_equal %w[resource environment sessionId annotationId], read["properties"].keys
+
+    watch = tools.fetch("rails_markup_watch")["inputSchema"]
+    assert_equal [], watch["required"]
+    assert_equal %w[sessionId timeoutSeconds batchWindowSeconds], watch["properties"].keys
+
+    transition = tools.fetch("rails_markup_transition")["inputSchema"]
+    assert_equal %w[action annotationId], transition["required"]
+    assert_equal %w[acknowledge resolve], transition.dig("properties", "action", "enum")
+    assert_equal %w[action annotationId summary environment], transition["properties"].keys
+
+    assert_equal %w[annotationId message], tools.fetch("rails_markup_reply").dig("inputSchema", "required")
+    assert_equal %w[annotationId reason], tools.fetch("rails_markup_dismiss").dig("inputSchema", "required")
+  end
+
+  def test_canonical_tools_advertise_safety_annotations
+    input = StringIO.new(jsonrpc_request(1, "tools/list"))
+    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
+    mcp.start
+
+    tools = parse_output["result"]["tools"].to_h { |tool| [tool["name"], tool] }
+    assert_equal true, tools.fetch("rails_markup_read").dig("annotations", "readOnlyHint")
+    assert_equal true, tools.fetch("rails_markup_watch").dig("annotations", "readOnlyHint")
+    assert_equal false, tools.fetch("rails_markup_transition").dig("annotations", "destructiveHint")
+    assert_equal false, tools.fetch("rails_markup_reply").dig("annotations", "destructiveHint")
+    assert_equal true, tools.fetch("rails_markup_dismiss").dig("annotations", "destructiveHint")
   end
 
   # ── Sessions (new names) ───────────────────────────────────

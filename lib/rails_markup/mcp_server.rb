@@ -7,7 +7,7 @@ require_relative "mcp_config"
 
 module RailsMarkup
   # MCP (Model Context Protocol) server speaking JSON-RPC 2.0 over stdio.
-  # Exposes 8 unified tools for AI agents to read and act on browser annotations.
+  # Exposes five focused tools for AI agents to read and act on browser annotations.
   # Each tool accepts an optional `environment` param ("development"|"production")
   # to route to the correct backend (default: "development").
   #
@@ -27,35 +27,28 @@ module RailsMarkup
 
     TOOLS = [
       {
-        name: "rails_markup_sessions",
-        description: "List all active annotation sessions (dev only)",
-        inputSchema: { type: "object", properties: {}, required: [] }
-      },
-      {
-        name: "rails_markup_session",
-        description: "Get a session with all its annotations (dev only)",
-        inputSchema: {
-          type: "object",
-          properties: { sessionId: { type: "string", description: "The session ID" } },
-          required: ["sessionId"]
-        }
-      },
-      {
-        name: "rails_markup_pending",
-        description: "Get all pending annotations. Pass sessionId to filter by session.",
+        name: "rails_markup_read",
+        description: "Read pending annotations, sessions, one session, or one annotation without changing state.",
         inputSchema: {
           type: "object",
           properties: {
-            sessionId: { type: "string", description: "Optional session ID to filter" },
-            markAcknowledged: { type: "boolean", description: "Acknowledge each annotation after fetching (default: true, production only)" },
-            **ENV_SCHEMA
+            resource: {
+              type: "string",
+              enum: %w[pending sessions session annotation],
+              description: "Resource to read; session requires sessionId and annotation requires annotationId."
+            },
+            **ENV_SCHEMA,
+            sessionId: { type: "string", description: "Session ID, required only when resource is session; filters pending when supplied." },
+            annotationId: { type: "string", description: "Annotation ID, required only when resource is annotation." }
           },
-          required: []
-        }
+          required: ["resource"],
+          additionalProperties: false
+        },
+        annotations: { readOnlyHint: true, destructiveHint: false }
       },
       {
         name: "rails_markup_watch",
-        description: "Block until new annotations appear, then return them as a batch. Use in a loop for hands-free processing.",
+        description: "In development, wait for newly created annotations and return a bounded batch without changing state.",
         inputSchema: {
           type: "object",
           properties: {
@@ -63,59 +56,56 @@ module RailsMarkup
             timeoutSeconds: { type: "number", description: "Max seconds to wait (default: 120, max: 300)" },
             batchWindowSeconds: { type: "number", description: "Seconds to wait after first annotation before returning batch (default: 10, max: 60)" }
           },
-          required: []
-        }
+          required: [],
+          additionalProperties: false
+        },
+        annotations: { readOnlyHint: true, destructiveHint: false }
       },
       {
-        name: "rails_markup_acknowledge",
-        description: "Mark an annotation as acknowledged",
+        name: "rails_markup_transition",
+        description: "Acknowledge or resolve one annotation; summary is used only when resolving.",
         inputSchema: {
           type: "object",
           properties: {
+            action: { type: "string", enum: %w[acknowledge resolve], description: "State transition to apply." },
             annotationId: { type: "string", description: "The annotation ID" },
+            summary: { type: "string", description: "Optional resolution summary; valid only for resolve." },
             **ENV_SCHEMA
           },
-          required: ["annotationId"]
-        }
-      },
-      {
-        name: "rails_markup_resolve",
-        description: "Mark an annotation as resolved with an optional summary",
-        inputSchema: {
-          type: "object",
-          properties: {
-            annotationId: { type: "string", description: "The annotation ID" },
-            summary: { type: "string", description: "Optional summary of how it was resolved" },
-            **ENV_SCHEMA
-          },
-          required: ["annotationId"]
-        }
-      },
-      {
-        name: "rails_markup_dismiss",
-        description: "Dismiss an annotation with a reason",
-        inputSchema: {
-          type: "object",
-          properties: {
-            annotationId: { type: "string", description: "The annotation ID" },
-            reason: { type: "string", description: "Reason for dismissing" },
-            **ENV_SCHEMA
-          },
-          required: ["annotationId"]
-        }
+          required: %w[action annotationId],
+          additionalProperties: false
+        },
+        annotations: { readOnlyHint: false, destructiveHint: false }
       },
       {
         name: "rails_markup_reply",
-        description: "Add a reply to an annotation's thread",
+        description: "Add a message to one annotation's discussion thread.",
         inputSchema: {
           type: "object",
           properties: {
             annotationId: { type: "string", description: "The annotation ID" },
-            message: { type: "string", description: "The reply message" },
+            message: { type: "string", description: "Reply message" },
             **ENV_SCHEMA
           },
-          required: ["annotationId", "message"]
-        }
+          required: %w[annotationId message],
+          additionalProperties: false
+        },
+        annotations: { readOnlyHint: false, destructiveHint: false }
+      },
+      {
+        name: "rails_markup_dismiss",
+        description: "Destructively dismiss one annotation with an explicit reason.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            annotationId: { type: "string", description: "The annotation ID" },
+            reason: { type: "string", description: "Reason for dismissal" },
+            **ENV_SCHEMA
+          },
+          required: %w[annotationId reason],
+          additionalProperties: false
+        },
+        annotations: { readOnlyHint: false, destructiveHint: true }
       }
     ].freeze
 
