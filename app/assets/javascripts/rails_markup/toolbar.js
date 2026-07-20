@@ -27,6 +27,7 @@
     activeFilter: "all",
     editingId: null,
     _currentScreenshot: null,
+    _storageError: null,
     _outboxFlushScheduled: false,
     _outboxFlushTimer: null,
 
@@ -660,14 +661,15 @@
           if (existing.comment !== comment) dirtyFields.push("content");
           if (existing.intent !== intent) dirtyFields.push("intent");
           if (existing.severity !== severity) dirtyFields.push("severity");
-          existing.comment = comment;
-          existing.intent = intent;
-          existing.severity = severity;
-          if (screenshot && existing.screenshot !== screenshot) {
-            existing.screenshot = screenshot;
-            dirtyFields.push("metadata");
-          }
-          if (dirtyFields.length > 0) this._persistLocalMutation("upsert", existing, dirtyFields);
+          if (screenshot && existing.screenshot !== screenshot) dirtyFields.push("metadata");
+          const committed = dirtyFields.length === 0 || this._persistLocalMutation("upsert", dirtyFields, () => {
+            existing.comment = comment;
+            existing.intent = intent;
+            existing.severity = severity;
+            if (screenshot) existing.screenshot = screenshot;
+            return existing;
+          });
+          if (!committed) return;
           this._rebuildList();
           this._closePopup();
           return;
@@ -676,7 +678,7 @@
 
       // New annotation
       const annotation = {
-        id: this.nextId++,
+        id: this.nextId,
         clientId: this._newClientId(),
         serverId: null,
         syncState: "pending",
@@ -695,8 +697,12 @@
         thread: []
       };
 
-      this.annotations.push(annotation);
-      this._persistLocalMutation("upsert", annotation, this._browserCreateFields());
+      const committed = this._persistLocalMutation("upsert", this._browserCreateFields(), () => {
+        this.nextId += 1;
+        this.annotations.push(annotation);
+        return annotation;
+      });
+      if (!committed) return;
       this._renderPin(annotation);
       // Rebuild (not append) so a new card honors the active panel filter —
       // e.g. a pending annotation must not show while "Resolved" is selected.
@@ -791,6 +797,7 @@
       const list = document.getElementById("rm-panel-list");
       if (!list) return;
       list.innerHTML = "";
+      this._renderStorageError(list);
       this._renderFailedSync(list);
       const filtered = this._filteredAnnotations();
       if (filtered.length === 0) {
@@ -801,6 +808,16 @@
         return;
       }
       filtered.forEach(a => this._renderCard(a));
+    },
+
+    _renderStorageError(list) {
+      if (!this._storageError) return;
+      const error = document.createElement("div");
+      error.className = "rm-storage-error";
+      error.setAttribute("role", "alert");
+      error.style.cssText = "padding:8px;margin-bottom:8px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;color:#991b1b;font-size:11px;";
+      error.textContent = this._storageError;
+      list.appendChild(error);
     },
 
     _renderFailedSync(list) {
@@ -869,8 +886,11 @@
     _changeStatus(id, newStatus) {
       const annotation = this.annotations.find(a => a.id === id);
       if (!annotation) return;
-      annotation.status = newStatus;
-      this._persistLocalMutation("upsert", annotation, ["status"]);
+      const committed = this._persistLocalMutation("upsert", ["status"], () => {
+        annotation.status = newStatus;
+        return annotation;
+      });
+      if (!committed) return;
       this._renderPins();
       this._rebuildList();
       const label = newStatus.charAt(0).toUpperCase() + newStatus.slice(1);
@@ -880,9 +900,8 @@
     _deleteAnnotation(id) {
       const idx = this.annotations.findIndex(a => a.id === id);
       if (idx === -1) return;
-      const annotation = this.annotations[idx];
-      this.annotations.splice(idx, 1);
-      this._persistLocalMutation("delete", annotation);
+      const committed = this._persistLocalMutation("delete", [], () => this.annotations.splice(idx, 1)[0]);
+      if (!committed) return;
       this._renderPins();
       this._rebuildList();
       this._updateCount();
@@ -1011,7 +1030,14 @@
       }
     },
 
-    _persistLocalMutation(type, annotation, dirtyFields = []) {
+    _persistLocalMutation(type, dirtyFields, mutate) {
+      return this._commitLocalStateChange(() => {
+        const annotation = mutate();
+        this._queueLocalMutation(type, annotation, dirtyFields);
+      });
+    },
+
+    _queueLocalMutation(type, annotation, dirtyFields) {
       const currentEntry = this.outbox[annotation.clientId];
       const revision = Math.max(annotation.revision || 0, currentEntry?.revision || 0) + 1;
 
@@ -1036,8 +1062,39 @@
           dirtyFields: annotation.dirtyFields.slice()
         };
       }
+    },
 
-      if (this._saveToStorage()) this._scheduleOutboxFlush();
+    _commitLocalStateChange(mutate) {
+      const snapshot = this._localStateSnapshot();
+      mutate();
+      if (this._saveToStorage()) {
+        this._storageError = null;
+        this._scheduleOutboxFlush();
+        return true;
+      }
+
+      this.annotations = snapshot.annotations;
+      this.outbox = snapshot.outbox;
+      this.nextId = snapshot.nextId;
+      this.legacyMigrations = snapshot.legacyMigrations;
+      this._storageError = "Changes could not be saved in this browser. Free storage space and try again.";
+      this._renderPins();
+      this._rebuildList();
+      this._updateCount();
+      const panel = document.getElementById("rm-panel");
+      if (panel) panel.style.display = "flex";
+      const fab = document.getElementById("rm-fab");
+      if (fab) fab.setAttribute("aria-expanded", "true");
+      return false;
+    },
+
+    _localStateSnapshot() {
+      return JSON.parse(JSON.stringify({
+        annotations: this.annotations,
+        outbox: this.outbox,
+        nextId: this.nextId,
+        legacyMigrations: this.legacyMigrations
+      }));
     },
 
     _mergeDirtyFields(...collections) {
@@ -1065,10 +1122,12 @@
     _retrySync(clientId) {
       const entry = this.outbox[clientId];
       if (!entry || entry.syncState !== "failed") return;
-      entry.syncState = "pending";
-      const annotation = this.annotations.find(candidate => candidate.clientId === clientId);
-      if (annotation) annotation.syncState = "pending";
-      if (this._saveToStorage()) this._scheduleOutboxFlush();
+      const committed = this._commitLocalStateChange(() => {
+        entry.syncState = "pending";
+        const annotation = this.annotations.find(candidate => candidate.clientId === clientId);
+        if (annotation) annotation.syncState = "pending";
+      });
+      if (!committed) return;
       this._rebuildList();
     },
 

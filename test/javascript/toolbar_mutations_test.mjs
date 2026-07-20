@@ -5,6 +5,7 @@ import { createFakeFetch } from "./support/fake_fetch.mjs";
 import { createToolbarHarness } from "./support/toolbar_harness.mjs";
 
 const clientId = "11111111-1111-4111-8111-111111111111";
+const otherClientId = "22222222-2222-4222-8222-222222222222";
 const createDirtyFields = ["content", "intent", "severity", "selected_text", "target", "page_url", "metadata"];
 
 function injectToolbar(harness) {
@@ -37,6 +38,13 @@ function serverBackedAnnotation(overrides = {}) {
     metadata: { author: "Server Author", serverOnly: true, tool: "toolbar" },
     ...overrides
   };
+}
+
+function assertVisibleStorageError(harness) {
+  const error = harness.window.document.querySelector(".rm-storage-error");
+  assert.ok(error, "storage failure must remain visible in the panel");
+  assert.match(error.textContent, /could not be saved/i);
+  assert.equal(harness.window.document.getElementById("rm-panel").style.display, "flex");
 }
 
 test("create persists complete desired state and outbox before scheduled network work", async (t) => {
@@ -237,4 +245,142 @@ test("failed delete remains visible and retryable after its card is gone", async
   assert.deepEqual(harness.storageDocument().outbox[clientId], { ...tombstone, syncState: "pending" });
   await harness.advanceTimersBy(0);
   assert.equal(flushes, 1);
+});
+
+test("failed create restores annotations, outbox, next id, and UI without scheduling flush", (t) => {
+  const harness = createToolbarHarness({
+    uuids: [clientId],
+    storage: { "rm-annotations": { annotations: [], nextId: 1, outbox: {} } }
+  });
+  t.after(() => harness.reset());
+  injectToolbar(harness);
+  harness.toolbar._loadFromStorage();
+  const before = harness.storageDocument();
+  let flushes = 0;
+  harness.toolbar._flushOutbox = () => { flushes += 1; };
+  harness.toolbar._currentElement = { selector: "main" };
+  harness.window.document.getElementById("rm-popup").style.display = "block";
+  harness.window.document.getElementById("rm-popup-input").value = "Cannot persist";
+  harness.failNextStorageWrite(new Error("quota exceeded"));
+
+  harness.toolbar.submitAnnotation();
+
+  assert.deepEqual(Array.from(harness.toolbar.annotations), []);
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.toolbar.outbox)), {});
+  assert.equal(harness.toolbar.nextId, 1);
+  assert.deepEqual(harness.storageDocument(), before);
+  assert.equal(harness.window.document.querySelector("[data-card-id]"), null);
+  assert.equal(harness.window.document.querySelector("[data-pin-id]"), null);
+  assert.equal(harness.window.document.getElementById("rm-popup").style.display, "block");
+  assertVisibleStorageError(harness);
+  assert.equal(harness.pendingTimerCount(), 0);
+  assert.equal(flushes, 0);
+});
+
+test("failed edit restores content, revision, sync state, and outbox without closing editor", async (t) => {
+  const original = serverBackedAnnotation();
+  const harness = createToolbarHarness({ storage: { "rm-annotations": { annotations: [original], nextId: 8, outbox: {} } } });
+  t.after(() => harness.reset());
+  injectToolbar(harness);
+  harness.toolbar._loadFromStorage();
+  const before = harness.storageDocument();
+  harness.toolbar._editAnnotation(7);
+  await harness.advanceTimersBy(50);
+  harness.window.document.getElementById("rm-popup-input").value = "Not committed";
+  harness.failNextStorageWrite(new Error("quota exceeded"));
+
+  harness.toolbar.submitAnnotation();
+
+  assert.equal(harness.toolbar.annotations[0].comment, "Before");
+  assert.equal(harness.toolbar.annotations[0].revision, 3);
+  assert.equal(harness.toolbar.annotations[0].syncState, "synced");
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.toolbar.outbox)), {});
+  assert.deepEqual(harness.storageDocument(), before);
+  assert.match(harness.window.document.querySelector('[data-card-id="7"] .rm-card-body').textContent, /Before/);
+  assert.equal(harness.window.document.getElementById("rm-popup").style.display, "block");
+  assertVisibleStorageError(harness);
+  assert.equal(harness.pendingTimerCount(), 0);
+});
+
+test("failed status change restores status and does not show a success toast or schedule flush", (t) => {
+  const original = serverBackedAnnotation();
+  const harness = createToolbarHarness({ storage: { "rm-annotations": { annotations: [original], nextId: 8, outbox: {} } } });
+  t.after(() => harness.reset());
+  injectToolbar(harness);
+  harness.toolbar._loadFromStorage();
+  const before = harness.storageDocument();
+  harness.failNextStorageWrite(new Error("quota exceeded"));
+
+  harness.toolbar._changeStatus(7, "resolved");
+
+  assert.equal(harness.toolbar.annotations[0].status, "acknowledged");
+  assert.equal(harness.toolbar.annotations[0].revision, 3);
+  assert.equal(harness.toolbar.annotations[0].syncState, "synced");
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.toolbar.outbox)), {});
+  assert.deepEqual(harness.storageDocument(), before);
+  assert.equal(harness.window.document.querySelector('[data-status-id="7"]').value, "acknowledged");
+  assert.equal(harness.window.document.querySelector(".rm-toast"), null);
+  assertVisibleStorageError(harness);
+  assert.equal(harness.pendingTimerCount(), 0);
+});
+
+test("failed delete restores annotation order, card, outbox, revision, and count", (t) => {
+  const first = serverBackedAnnotation();
+  first.element.boundingBox = { top: 10, left: 20, width: 100, height: 30 };
+  const second = serverBackedAnnotation({ id: 8, clientId: otherClientId, comment: "Second", revision: 6 });
+  const existingOutbox = {
+    [clientId]: {
+      type: "upsert", clientId, revision: 4, syncState: "pending",
+      annotation: { clientId, page_url: "/products", content: "Before" }, dirtyFields: ["content"]
+    }
+  };
+  first.syncState = "pending";
+  first.dirtyFields = ["content"];
+  const harness = createToolbarHarness({
+    url: "https://example.test/products",
+    storage: { "rm-annotations": { annotations: [first, second], nextId: 9, outbox: existingOutbox } }
+  });
+  t.after(() => harness.reset());
+  injectToolbar(harness);
+  harness.toolbar._loadFromStorage();
+  harness.toolbar._renderPins();
+  const before = harness.storageDocument();
+  harness.failNextStorageWrite(new Error("quota exceeded"));
+
+  harness.toolbar._deleteAnnotation(7);
+
+  assert.deepEqual(Array.from(harness.toolbar.annotations, annotation => annotation.id), [7, 8]);
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.toolbar.outbox)), before.outbox);
+  assert.equal(harness.toolbar.annotations[0].revision, 3);
+  assert.equal(harness.window.document.querySelectorAll("[data-card-id]").length, 2);
+  assert.equal(harness.window.document.querySelector('[data-card-id="7"] .rm-card-body').textContent, "Before");
+  assert.ok(harness.window.document.querySelector('[data-pin-id="7"]'));
+  assert.equal(harness.window.document.getElementById("rm-panel-count").textContent, "2");
+  assert.deepEqual(harness.storageDocument(), before);
+  assertVisibleStorageError(harness);
+  assert.equal(harness.pendingTimerCount(), 0);
+});
+
+test("failed manual retry remains failed and visible without scheduling flush", (t) => {
+  const desired = { clientId, page_url: "/products", content: "Retry me", status: "pending" };
+  const annotation = serverBackedAnnotation({ comment: "Retry me", syncState: "failed", dirtyFields: ["content"], revision: 4 });
+  const failedEntry = { type: "upsert", clientId, revision: 4, syncState: "failed", annotation: desired, dirtyFields: ["content"] };
+  const harness = createToolbarHarness({ storage: { "rm-annotations": { annotations: [annotation], nextId: 8, outbox: { [clientId]: failedEntry } } } });
+  t.after(() => harness.reset());
+  injectToolbar(harness);
+  harness.toolbar._loadFromStorage();
+  const before = harness.storageDocument();
+  let flushes = 0;
+  harness.toolbar._flushOutbox = () => { flushes += 1; };
+  harness.failNextStorageWrite(new Error("quota exceeded"));
+
+  harness.toolbar._retrySync(clientId);
+
+  assert.equal(harness.toolbar.annotations[0].syncState, "failed");
+  assert.equal(harness.toolbar.outbox[clientId].syncState, "failed");
+  assert.deepEqual(harness.storageDocument(), before);
+  assert.ok(harness.window.document.querySelector(`[data-retry-client-id="${clientId}"]`));
+  assertVisibleStorageError(harness);
+  assert.equal(harness.pendingTimerCount(), 0);
+  assert.equal(flushes, 0);
 });
