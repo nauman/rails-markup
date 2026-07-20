@@ -2,16 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.2.0] - Unreleased
 
 ### Added
 
-- `toolbar_enabled` configuration to show or hide the annotation toolbar and FAB.
+- `toolbar_enabled` configuration to show or hide the entire annotation toolbar system.
+- `fab_visible` configuration to hide the floating action button independently, while pins and the panel stay active; exposed as a step in the setup wizard.
 - Stable per-annotation client UUIDs with a database uniqueness constraint for safe request replay.
+- Keyset (cursor) pagination for the dashboard "Load more".
+- `thor` and `lipgloss` declared as explicit runtime dependencies; `csv` pinned.
 
 ### Fixed
 
 - Deterministic dashboard ordering for annotations with identical timestamps.
+- Dashboard "Load more" no longer repeats a row when annotations arrive between page requests (offset → keyset pagination).
+- The `client_uuid` migration now honors a custom `config.table_name` instead of silently skipping renamed tables (which had defeated create-time deduplication).
+- Legacy per-page localStorage migration no longer discards annotations whose ids collide across pages.
+- Toolbar panel and popup no longer overflow small mobile screens.
 - CLI test load order so the complete suite can run in one process.
 - Repeated Turbo execution no longer replaces the toolbar singleton or leaks navigation listeners.
 
