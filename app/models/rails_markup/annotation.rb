@@ -7,6 +7,8 @@ module RailsMarkup
     INTENTS = %w[fix change question approve].freeze
     SEVERITIES = %w[suggestion important blocking].freeze
     STATUSES = %w[pending acknowledged resolved dismissed].freeze
+    BROWSER_ATTRIBUTES = %w[content intent severity selected_text target page_url].freeze
+    BROWSER_METADATA_KEYS = %w[tool url localId sessionId screenshot].freeze
 
     # Optional user association — no FK constraint, engine doesn't know host users table
     belongs_to :user, optional: true
@@ -62,6 +64,13 @@ module RailsMarkup
 
     def author_name
       metadata&.dig("author")
+    end
+
+    def apply_browser_state(attributes, dirty_fields: [])
+      assign_attributes(attributes.slice(*BROWSER_ATTRIBUTES))
+      self.metadata = (metadata || {}).merge(attributes.fetch("metadata", {}).slice(*BROWSER_METADATA_KEYS))
+      self.status = attributes["status"] if dirty_fields.include?("status")
+      self
     end
 
     def acknowledge!

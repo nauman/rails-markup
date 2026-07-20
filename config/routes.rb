@@ -16,6 +16,10 @@ RailsMarkup::Engine.routes.draw do
     post "sessions/:session_id/annotations", to: "annotations#create"
     get "health", to: "annotations#health"
 
+    get "annotations", to: "annotations#index"
+    put "annotations/:client_uuid", to: "annotations#upsert"
+    delete "annotations/:client_uuid", to: "annotations#destroy"
+
     scope "annotations/:id", constraints: { id: /\d+/ } do
       post "acknowledge", to: "annotations#acknowledge"
       post "resolve", to: "annotations#resolve"

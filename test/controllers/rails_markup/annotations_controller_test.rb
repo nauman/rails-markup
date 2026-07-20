@@ -45,6 +45,171 @@ module RailsMarkup
       end
     end
 
+    test "unauthenticated pull is rejected" do
+      reset!
+
+      get "/feedback/api/annotations", params: { page_url: "/private" }, as: :json
+
+      assert_redirected_to "/rails_markup_test_session"
+    end
+
+    test "pull returns only the exact page in deterministic recent order" do
+      older = Annotation.create!(content: "Older", page_url: "/same?tab=one", created_at: 2.minutes.ago)
+      newer = Annotation.create!(content: "Newer", page_url: "/same?tab=one", created_at: 1.minute.ago)
+      Annotation.create!(content: "Other", page_url: "/same?tab=two")
+
+      get "/feedback/api/annotations", params: { page_url: "/same?tab=one" }, as: :json
+
+      assert_response :ok
+      assert_equal [newer.id.to_s, older.id.to_s], response.parsed_body.map { |annotation| annotation["id"] }
+    end
+
+    test "pull keeps query string variants separate" do
+      Annotation.create!(content: "One", page_url: "/same?tab=one")
+      Annotation.create!(content: "Two", page_url: "/same?tab=two")
+
+      get "/feedback/api/annotations", params: { page_url: "/same?tab=two" }, as: :json
+
+      assert_equal ["Two"], response.parsed_body.map { |annotation| annotation["content"] }
+    end
+
+    test "put creates and returns the uuid annotation" do
+      assert_difference "Annotation.count", 1 do
+        put "/feedback/api/annotations/browser-uuid",
+          params: { content: "Created", page_url: "/put", intent: "fix", severity: "important",
+                    selectedText: "selection", target: { selector: "main" }, metadata: { tool: "toolbar" } },
+          as: :json
+      end
+
+      assert_response :ok
+      assert_equal "browser-uuid", response.parsed_body["clientId"]
+      assert_equal "Created", response.parsed_body["content"]
+      assert_equal "selection", response.parsed_body["selectedText"]
+    end
+
+    test "put updates the uuid annotation and preserves server owned fields" do
+      annotation = Annotation.create!(
+        client_uuid: "browser-uuid",
+        content: "Before",
+        page_url: "/before",
+        user_id: 42,
+        status: "acknowledged",
+        metadata: { "author" => "Server Author", "serverOnly" => true, "tool" => "old" },
+        thread: [{ "role" => "agent", "message" => "Server reply" }]
+      )
+
+      put "/feedback/api/annotations/browser-uuid",
+        params: { id: "forged", userId: 99, author: "Forged", content: "After", page_url: "/after",
+                  status: "pending", createdAt: "2000-01-01", thread: [],
+                  metadata: { tool: "new", serverOnly: false } },
+        as: :json
+
+      assert_response :ok
+      annotation.reload
+      assert_equal "After", annotation.content
+      assert_equal "/after", annotation.page_url
+      assert_equal "acknowledged", annotation.status
+      assert_equal 42, annotation.user_id
+      assert_equal [{ "role" => "agent", "message" => "Server reply" }], annotation.thread
+      assert_equal({ "author" => "Server Author", "serverOnly" => true, "tool" => "new" }, annotation.metadata)
+    end
+
+    test "delete is idempotent and returns no content twice" do
+      Annotation.create!(client_uuid: "delete-me", content: "Delete", page_url: "/delete")
+
+      assert_difference "Annotation.count", -1 do
+        delete "/feedback/api/annotations/delete-me", as: :json
+      end
+      assert_response :no_content
+
+      assert_no_difference "Annotation.count" do
+        delete "/feedback/api/annotations/delete-me", as: :json
+      end
+      assert_response :no_content
+    end
+
+    test "put rejects whitespace and oversized uuids" do
+      put "/feedback/api/annotations/%20%20%20", params: { content: "No", page_url: "/" }, as: :json
+      assert_response :unprocessable_entity
+
+      put "/feedback/api/annotations/#{"a" * 65}", params: { content: "No", page_url: "/" }, as: :json
+      assert_response :unprocessable_entity
+    end
+
+    test "compatibility post normalizes blank client id to nil" do
+      post session_annotations_path("test-session"),
+        params: { content: "First", clientId: "   " }, as: :json
+      assert_response :created
+
+      post session_annotations_path("test-session"),
+        params: { content: "Second", clientId: "" }, as: :json
+      assert_response :created
+
+      assert_nil Annotation.find_by!(content: "First").client_uuid
+      assert_nil Annotation.find_by!(content: "Second").client_uuid
+    end
+
+    test "compatibility post rejects client metadata author" do
+      assert_no_difference "Annotation.count" do
+        post session_annotations_path("test-session"),
+          params: { content: "Forged", metadata: { author: "Browser Author" } }, as: :json
+      end
+
+      assert_response :unprocessable_entity
+    end
+
+    test "put updates status only when status is explicitly dirty" do
+      annotation = Annotation.create!(client_uuid: "status-owned", content: "Status", page_url: "/status", status: "acknowledged")
+
+      put "/feedback/api/annotations/status-owned",
+        params: { content: "Ordinary edit", page_url: "/status", status: "resolved" }, as: :json
+      assert_response :ok
+      assert_equal "acknowledged", annotation.reload.status
+
+      put "/feedback/api/annotations/status-owned",
+        params: { content: "Ordinary edit", page_url: "/status", status: "resolved", dirtyFields: ["status"] },
+        as: :json
+      assert_response :ok
+      assert_equal "resolved", annotation.reload.status
+    end
+
+    test "put rejects invalid dirty fields and invalid explicitly dirty status" do
+      put "/feedback/api/annotations/invalid-dirty",
+        params: { content: "No", page_url: "/", dirtyFields: ["thread"] }, as: :json
+      assert_response :unprocessable_entity
+
+      put "/feedback/api/annotations/invalid-dirty-shape",
+        params: { content: "No", page_url: "/", status: "resolved", dirtyFields: "status" }, as: :json
+      assert_response :unprocessable_entity
+
+      put "/feedback/api/annotations/invalid-status",
+        params: { content: "No", page_url: "/", status: "invented", dirtyFields: ["status"] }, as: :json
+      assert_response :unprocessable_entity
+    end
+
+    test "put reloads and updates the winner of a unique uuid race" do
+      candidate = Annotation.new(client_uuid: "raced", content: "Desired", page_url: "/race")
+      race = proc do
+        Annotation.create!(client_uuid: "raced", content: "Winner", page_url: "/race", metadata: { "author" => "Server" })
+        raise ActiveRecord::RecordNotUnique
+      end
+
+      Annotation.stub :find_or_initialize_by, candidate do
+        candidate.stub :save!, race do
+          assert_difference "Annotation.count", 1 do
+            put "/feedback/api/annotations/raced",
+              params: { content: "Desired", page_url: "/race", metadata: { tool: "toolbar" } }, as: :json
+          end
+        end
+      end
+
+      assert_response :ok
+      assert_equal 1, Annotation.where(client_uuid: "raced").count
+      winner = Annotation.find_by!(client_uuid: "raced")
+      assert_equal "Desired", winner.content
+      assert_equal({ "author" => "Server", "tool" => "toolbar" }, winner.metadata)
+    end
+
     # --- Session ---
 
     test "create_session returns prefixed id" do

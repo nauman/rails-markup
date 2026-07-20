@@ -17,6 +17,8 @@ module RailsMarkup
 
     # POST /feedback/api/sessions/:session_id/annotations
     def create
+      return render_invalid_metadata if client_supplied_author?
+
       annotation = Annotation.new(annotation_params)
       assign_current_user(annotation)
 
@@ -34,6 +36,48 @@ module RailsMarkup
       raise if annotation.client_uuid.blank?
 
       render_duplicate(Annotation.find_by!(client_uuid: annotation.client_uuid), annotation)
+    end
+
+    # GET /feedback/api/annotations?page_url=/current?page=variant
+    def index
+      annotations = Annotation.for_page(params[:page_url]).recent
+      render json: annotations.map(&:as_api_json)
+    end
+
+    # PUT /feedback/api/annotations/:client_uuid
+    def upsert
+      client_uuid = normalized_route_uuid
+      return render_invalid_uuid unless client_uuid
+      return render_invalid_metadata if client_supplied_author?
+
+      dirty_fields = normalized_dirty_fields
+      return render_invalid_dirty_fields unless dirty_fields
+
+      attributes = browser_attributes
+      return render_invalid_status if dirty_fields.include?("status") && !Annotation::STATUSES.include?(attributes["status"])
+
+      annotation = Annotation.find_or_initialize_by(client_uuid: client_uuid)
+      created = annotation.new_record?
+      apply_desired_state(annotation, attributes, dirty_fields)
+      annotation.save!
+      fire_create_callback(annotation) if created
+      render json: annotation.as_api_json
+    rescue ActiveRecord::RecordInvalid => error
+      render json: { errors: error.record.errors.full_messages }, status: :unprocessable_entity
+    rescue ActiveRecord::RecordNotUnique
+      annotation = Annotation.find_by!(client_uuid: client_uuid)
+      apply_desired_state(annotation, attributes, dirty_fields)
+      annotation.save!
+      render json: annotation.as_api_json
+    end
+
+    # DELETE /feedback/api/annotations/:client_uuid
+    def destroy
+      client_uuid = normalized_route_uuid
+      return render_invalid_uuid unless client_uuid
+
+      Annotation.find_by(client_uuid: client_uuid)&.destroy!
+      head :no_content
     end
 
     # GET /feedback/api/health
@@ -92,7 +136,7 @@ module RailsMarkup
     end
 
     ALLOWED_TARGET_KEYS = %w[selector cssPath nearbyText boundingBox].freeze
-    ALLOWED_METADATA_KEYS = %w[tool url localId sessionId author screenshot].freeze
+    ALLOWED_METADATA_KEYS = Annotation::BROWSER_METADATA_KEYS.freeze
 
     def fire_create_callback(annotation)
       callback = RailsMarkup.config.on_create_callback
@@ -106,11 +150,58 @@ module RailsMarkup
     def annotation_params
       permitted = params.permit(:page_url, :content, :intent, :severity, :selected_text, :selectedText, :clientId, target: {}, metadata: {})
       permitted[:selected_text] ||= permitted.delete(:selectedText)
-      permitted[:client_uuid] = permitted.delete(:clientId)
+      permitted[:client_uuid] = permitted.delete(:clientId).to_s.strip.presence
       permitted[:page_url] ||= request.referer || "/"
       permitted[:target] = normalize_target(params[:target]) if params[:target].present?
       permitted[:metadata] = normalize_hash(params[:metadata], ALLOWED_METADATA_KEYS) if params[:metadata].present?
       permitted
+    end
+
+    def browser_attributes
+      permitted = params.permit(:page_url, :content, :intent, :severity, :status, :selected_text, :selectedText, target: {}, metadata: {})
+      permitted[:selected_text] ||= permitted.delete(:selectedText)
+      permitted[:target] = normalize_target(params[:target]) if params.key?(:target)
+      permitted[:metadata] = normalize_hash(params[:metadata], ALLOWED_METADATA_KEYS) if params.key?(:metadata)
+      permitted.to_h.stringify_keys
+    end
+
+    def apply_desired_state(annotation, attributes, dirty_fields)
+      assign_current_user(annotation) if annotation.new_record?
+      annotation.apply_browser_state(attributes, dirty_fields: dirty_fields)
+    end
+
+    def normalized_route_uuid
+      uuid = params[:client_uuid].to_s.strip
+      uuid if uuid.present? && uuid.length <= 64
+    end
+
+    def normalized_dirty_fields
+      fields = params[:dirtyFields] || []
+      return unless fields.is_a?(Array)
+
+      fields = fields.map(&:to_s)
+      fields if (fields - ["status"]).empty?
+    end
+
+    def client_supplied_author?
+      metadata = params[:metadata]
+      metadata.respond_to?(:key?) && (metadata.key?(:author) || metadata.key?("author"))
+    end
+
+    def render_invalid_uuid
+      render json: { error: "client uuid must be present and at most 64 characters" }, status: :unprocessable_entity
+    end
+
+    def render_invalid_metadata
+      render json: { error: "author metadata is server owned" }, status: :unprocessable_entity
+    end
+
+    def render_invalid_dirty_fields
+      render json: { error: "invalid dirty fields" }, status: :unprocessable_entity
+    end
+
+    def render_invalid_status
+      render json: { error: "invalid status" }, status: :unprocessable_entity
     end
 
     def normalize_target(target)
