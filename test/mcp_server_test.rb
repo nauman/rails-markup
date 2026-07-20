@@ -2,6 +2,7 @@
 
 require_relative "test_helper"
 require "stringio"
+require "openssl"
 
 class McpServerTest < Minitest::Test
   def setup
@@ -320,9 +321,9 @@ class McpServerTest < Minitest::Test
   end
 
   def test_legacy_watch_annotations_dispatches_to_watch
-    # Just verify it dispatches without error (watch would block, so we can't fully test)
-    assert RailsMarkup::McpServer::LEGACY_ALIASES.key?("rails_markup_watch_annotations")
-    assert_equal "rails_markup_watch", RailsMarkup::McpServer::LEGACY_ALIASES["rails_markup_watch_annotations"][:handler]
+    result = nil
+    capture_stderr { result = call_tool("rails_markup_watch_annotations", timeoutSeconds: 0) }
+    assert_equal [], result
   end
 
   def test_legacy_fetch_production_injects_environment
@@ -334,6 +335,18 @@ class McpServerTest < Minitest::Test
     ann = create_test_annotation
     result = call_tool("rails_markup_resolve_production", annotationId: ann.id)
     assert_match(/No production URL/, result["error"])
+  end
+
+  def test_legacy_reply_and_dismiss_production_inject_environment
+    annotation = create_test_annotation
+    reply = nil
+    dismiss = nil
+    capture_stderr do
+      reply = call_tool("rails_markup_reply_production", annotationId: annotation.id, message: "test")
+      dismiss = call_tool("rails_markup_dismiss_production", annotationId: annotation.id, reason: "test")
+    end
+    assert_match(/No production URL/, reply["error"])
+    assert_match(/No production URL/, dismiss["error"])
   end
 
   def test_legacy_emits_deprecation_to_stderr
@@ -388,6 +401,152 @@ class McpServerTest < Minitest::Test
     assert_equal 2, responses.size
     assert_equal 1, responses[0]["id"]
     assert_equal 2, responses[1]["id"]
+  end
+
+  def test_unknown_json_rpc_method_remains_a_protocol_error
+    input = StringIO.new(jsonrpc_request(1, "unsupported/method"))
+    RailsMarkup::McpServer.new(store: @store, input: input, output: @output).start
+
+    response = parse_output
+    assert_equal(-32601, response.dig("error", "code"))
+    refute response.key?("result")
+  end
+
+  def test_invalid_json_rpc_request_returns_protocol_error_and_loop_continues
+    input = StringIO.new([
+      JSON.generate({ jsonrpc: "2.0", id: 1, method: 123 }), "\n",
+      jsonrpc_request(2, "ping")
+    ].join)
+    RailsMarkup::McpServer.new(store: @store, input: input, output: @output).start
+
+    responses = output_responses
+    assert_equal(-32600, responses.first.dig("error", "code"))
+    assert_equal({}, responses.last["result"])
+  end
+
+  def test_malformed_incoming_json_emits_parse_error_and_loop_continues
+    input = StringIO.new("{not-json\n#{jsonrpc_request(2, "ping")}")
+    RailsMarkup::McpServer.new(store: @store, input: input, output: @output).start
+
+    responses = output_responses
+    assert_equal(-32700, responses.first.dig("error", "code"))
+    assert_equal "Parse error", responses.first.dig("error", "message")
+    assert_equal({}, responses.last["result"])
+  end
+
+  def test_remote_failures_are_in_band_and_loop_continues
+    failures = [
+      JSON::ParserError.new("response contained sensitive annotation text"),
+      URI::InvalidURIError.new("https://user:password@example.test?token=sensitive"),
+      Timeout::Error.new("request body was sensitive"),
+      SocketError.new("configured-secret"),
+      Errno::ECONNREFUSED.new("configured-secret"),
+      OpenSSL::SSL::SSLError.new("configured-secret"),
+      Net::HTTPBadResponse.new("configured-secret")
+    ]
+
+    failures.each do |failure|
+      responses, stderr = production_read_then_ping do |mcp|
+        mcp.define_singleton_method(:http_get) { |*| raise failure }
+      end
+      assert_equal true, responses.first.dig("result", "isError"), failure.class.name
+      assert_equal({}, responses.last["result"], failure.class.name)
+      combined = responses.to_json + stderr
+      refute_includes combined, "configured-secret"
+      refute_includes combined, "sensitive annotation text"
+      refute_includes combined, "request body was sensitive"
+      refute_includes combined, "user:password"
+      refute_includes combined, "token=sensitive"
+    end
+  end
+
+  def test_invalid_remote_json_is_in_band_and_loop_continues
+    responses, = production_read_then_ping do |mcp|
+      response = fake_http_response("200", "not-json-sensitive-annotation")
+      mcp.define_singleton_method(:http_get) { |*| response }
+    end
+
+    assert_equal true, responses.first.dig("result", "isError")
+    assert_match(/invalid JSON/i, responses.first.dig("result", "content", 0, "text"))
+    assert_equal({}, responses.last["result"])
+    refute_includes responses.to_json, "sensitive-annotation"
+  end
+
+  def test_non_success_remote_responses_are_in_band_redacted_and_loop_continues
+    { "401" => /authentication/i, "503" => /HTTP 503/ }.each do |code, message|
+      responses, stderr = production_read_then_ping do |mcp|
+        response = fake_http_response(code, "sensitive annotation and request body")
+        mcp.define_singleton_method(:http_get) { |*| response }
+      end
+
+      assert_equal true, responses.first.dig("result", "isError")
+      assert_match message, responses.first.dig("result", "content", 0, "text")
+      assert_equal({}, responses.last["result"])
+      refute_includes responses.to_json + stderr, "sensitive annotation"
+    end
+  end
+
+  def test_validation_and_config_errors_do_not_echo_secrets_or_caller_content
+    ENV["RAILS_MARKUP_PROD_URL"] = "https://url-user:url-password@example.test?token=url-secret"
+    ENV["RAILS_MARKUP_PROD_TOKEN"] = "bearer-secret"
+    response = nil
+    config_response = nil
+    stderr = capture_stderr do
+      response = call_tool_response(
+        "rails_markup_reply",
+        annotationId: "123",
+        message: "private annotation content",
+        token: "caller-secret",
+        environment: "production"
+      )
+      config_response = call_tool_response("rails_markup_read", resource: "pending", environment: "production")
+    end
+
+    combined = response.to_json + config_response.to_json + stderr
+    assert_equal true, response.dig("result", "isError")
+    assert_equal true, config_response.dig("result", "isError")
+    %w[url-user url-password url-secret bearer-secret caller-secret private].each do |secret|
+      refute_includes combined, secret
+    end
+  ensure
+    ENV.delete("RAILS_MARKUP_PROD_URL")
+    ENV.delete("RAILS_MARKUP_PROD_TOKEN")
+  end
+
+  def test_invalid_argument_types_and_watch_bounds_are_in_band
+    calls = [
+      ["rails_markup_read", { resource: "session", sessionId: 123 }],
+      ["rails_markup_read", { resource: "pending", sessionId: [] }],
+      ["rails_markup_watch", { timeoutSeconds: "soon" }],
+      ["rails_markup_watch", { timeoutSeconds: 301 }],
+      ["rails_markup_watch", { batchWindowSeconds: -1 }],
+      ["rails_markup_transition", { action: "resolve", annotationId: 123 }],
+      ["rails_markup_reply", { annotationId: "123", message: [] }]
+    ]
+
+    calls.each do |name, arguments|
+      response = call_tool_response(name, **arguments)
+      assert_equal true, response.dig("result", "isError"), "expected #{name} to validate types and bounds"
+    end
+  end
+
+  def test_invalid_configuration_is_in_band_and_loop_continues
+    dir = Dir.mktmpdir
+    File.write(File.join(dir, ".mcp.json"), "{invalid-config")
+    input = StringIO.new([
+      jsonrpc_request(1, "tools/call", {
+        name: "rails_markup_read", arguments: { resource: "pending", environment: "production" }
+      }),
+      jsonrpc_request(2, "ping")
+    ].join)
+    RailsMarkup::McpServer.new(store: @store, input: input, output: @output, dir: dir).start
+
+    responses = output_responses
+    assert_equal true, responses.first.dig("result", "isError")
+    assert_match(/configuration is invalid/i, responses.first.dig("result", "content", 0, "text"))
+    assert_equal({}, responses.last["result"])
+  ensure
+    FileUtils.remove_entry(dir) if dir
   end
 
   # ── Config ─────────────────────────────────────────────────
@@ -554,6 +713,10 @@ class McpServerTest < Minitest::Test
     JSON.parse(@output.string.lines.first)
   end
 
+  def output_responses
+    @output.string.lines.map { |line| JSON.parse(line) }
+  end
+
   # Call a tool and return the parsed content
   def call_tool(name, **args)
     response = call_tool_response(name, **args)
@@ -571,6 +734,33 @@ class McpServerTest < Minitest::Test
   def create_test_annotation
     session = @store.create_session(url: "http://example.com")
     @store.create_annotation(session_id: session.id, target: "div", content: "fix this")
+  end
+
+  def production_read_then_ping
+    ENV["RAILS_MARKUP_PROD_URL"] = "https://configured.test/base"
+    ENV["RAILS_MARKUP_PROD_TOKEN"] = "configured-test-token"
+    @output = StringIO.new
+    input = StringIO.new([
+      jsonrpc_request(1, "tools/call", {
+        name: "rails_markup_read", arguments: { resource: "pending", environment: "production" }
+      }),
+      jsonrpc_request(2, "ping")
+    ].join)
+    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
+    yield mcp
+    stderr = capture_stderr { mcp.start }
+    [output_responses, stderr]
+  ensure
+    ENV.delete("RAILS_MARKUP_PROD_URL")
+    ENV.delete("RAILS_MARKUP_PROD_TOKEN")
+  end
+
+  def fake_http_response(code, body)
+    response = Struct.new(:code, :body).new(code, body)
+    response.define_singleton_method(:is_a?) do |klass|
+      klass == Net::HTTPSuccess && code.start_with?("2")
+    end
+    response
   end
 
   def capture_stderr

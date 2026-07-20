@@ -3,6 +3,7 @@
 require "json"
 require "ipaddr"
 require "net/http"
+require "openssl"
 require "uri"
 require_relative "mcp_config"
 
@@ -18,7 +19,8 @@ module RailsMarkup
   #   RAILS_MARKUP_PROD_TOKEN — production API token
   #   RAILS_MARKUP_MOUNT_PATH — engine mount path (default: /admin/annotations)
   class McpServer
-    class TargetError < StandardError; end
+    class ToolError < StandardError; end
+    class TargetError < ToolError; end
 
     ENV_SCHEMA = {
       environment: {
@@ -158,8 +160,8 @@ module RailsMarkup
         request = JSON.parse(line)
         response = handle_request(request)
         write_response(response) if response
-      rescue JSON::ParserError => e
-        write_response(error_response(nil, -32700, "Parse error: #{e.message}"))
+      rescue JSON::ParserError
+        write_response(error_response(nil, -32700, "Parse error"))
       end
     end
 
@@ -170,6 +172,8 @@ module RailsMarkup
 
     def config_value(env_key)
       ENV[env_key] || @mcp_config.raw_env[env_key]
+    rescue JSON::ParserError
+      fail ToolError, "Rails Markup configuration is invalid."
     end
 
     def mount_path
@@ -235,7 +239,7 @@ module RailsMarkup
 
     def safe_path_parts(path, label:)
       path.to_s.split("/").reject(&:empty?).map do |part|
-        decoded = URI::DEFAULT_PARSER.unescape(part)
+        decoded = URI.decode_uri_component(part)
         if %w[. ..].include?(decoded) || decoded.include?("/") || decoded.include?("\\")
           fail TargetError, "The #{label} cannot contain traversal segments."
         end
@@ -245,7 +249,7 @@ module RailsMarkup
 
     def safe_path_segment(segment)
       value = segment.to_s
-      decoded = URI::DEFAULT_PARSER.unescape(value)
+      decoded = URI.decode_uri_component(value)
       unless value.match?(/\A[A-Za-z0-9._~-]+\z/) && !%w[. ..].include?(decoded)
         fail TargetError, "API path segment is invalid."
       end
@@ -255,13 +259,18 @@ module RailsMarkup
     # ── JSON-RPC dispatch ─────────────────────────────────────
 
     def handle_request(request)
+      unless request.is_a?(Hash) && request["jsonrpc"] == "2.0" && request["method"].is_a?(String)
+        return error_response(request.is_a?(Hash) ? request["id"] : nil, -32600, "Invalid Request")
+      end
+
       id     = request["id"]
       method = request["method"]
       params = request["params"] || {}
+      return error_response(id, -32602, "Invalid params") unless params.is_a?(Hash)
 
       case method
       when "initialize"
-        client_version = params.dig("protocolVersion")
+        client_version = params["protocolVersion"]
         supported = %w[2025-06-18 2025-03-26 2024-11-05]
         negotiated = supported.include?(client_version) ? client_version : supported.first
 
@@ -279,11 +288,13 @@ module RailsMarkup
       when "ping"
         result_response(id, {})
       else
-        error_response(id, -32601, "Method not found: #{method}")
+        error_response(id, -32601, "Method not found")
       end
     end
 
     def handle_tool_call(id, name, args)
+      return tool_error_response(id, "Tool arguments must be an object.") unless args.is_a?(Hash)
+
       if (legacy = LEGACY_ALIASES[name])
         allowed = TOOL_ARGUMENTS.fetch(legacy[:handler]) - legacy.fetch(:inject, {}).keys
         return invalid_arguments_response(id, args.keys - allowed) unless (args.keys - allowed).empty?
@@ -321,8 +332,22 @@ module RailsMarkup
 
       content = [{ type: "text", text: result.to_json }]
       result_response(id, { content: content })
-    rescue TargetError => e
+    rescue ToolError => e
       tool_error_response(id, e.message)
+    rescue JSON::ParserError
+      tool_error_response(id, "Remote Rails Markup server returned invalid JSON.")
+    rescue URI::InvalidURIError
+      tool_error_response(id, "Configured Rails Markup URL is invalid.")
+    rescue Timeout::Error
+      tool_error_response(id, "Rails Markup request timed out.")
+    rescue SocketError, SystemCallError
+      tool_error_response(id, "Could not connect to the configured Rails Markup server.")
+    rescue OpenSSL::SSL::SSLError
+      tool_error_response(id, "Secure connection to the configured Rails Markup server failed.")
+    rescue Net::HTTPBadResponse, Net::HTTPHeaderSyntaxError, Net::ProtocolError, IOError
+      tool_error_response(id, "Rails Markup HTTP transport failed.")
+    rescue StandardError
+      tool_error_response(id, "Rails Markup tool request failed safely.")
     end
 
     def validation_error(name, args)
@@ -333,6 +358,8 @@ module RailsMarkup
       when "rails_markup_read"
         resource = args["resource"]
         return "resource must be pending, sessions, session, or annotation." unless %w[pending sessions session annotation].include?(resource)
+        return "sessionId must be a non-empty string." if args.key?("sessionId") && !nonempty_string?(args["sessionId"])
+        return "annotationId must be a non-empty string." if args.key?("annotationId") && !nonempty_string?(args["annotationId"])
         return "sessionId is required when resource is session." if resource == "session" && blank?(args["sessionId"])
         return "annotationId is required when resource is annotation." if resource == "annotation" && blank?(args["annotationId"])
         return "annotationId is only valid when resource is annotation." if resource != "annotation" && args.key?("annotationId")
@@ -342,17 +369,34 @@ module RailsMarkup
         end
       when "rails_markup_transition"
         return "action must be acknowledge or resolve." unless %w[acknowledge resolve].include?(args["action"])
-        return "annotationId is required." if blank?(args["annotationId"])
+        return "annotationId must be a non-empty string." unless nonempty_string?(args["annotationId"])
+        return "summary must be a string." if args.key?("summary") && !args["summary"].is_a?(String)
         return "summary is only valid for resolve." if args["action"] != "resolve" && args.key?("summary")
       when "rails_markup_reply"
-        return "annotationId and message are required." if blank?(args["annotationId"]) || blank?(args["message"])
+        return "annotationId and message must be non-empty strings." unless nonempty_string?(args["annotationId"]) && nonempty_string?(args["message"])
       when "rails_markup_dismiss"
-        return "annotationId and reason are required." if blank?(args["annotationId"]) || blank?(args["reason"])
+        return "annotationId and reason must be non-empty strings." unless nonempty_string?(args["annotationId"]) && nonempty_string?(args["reason"])
+      when "rails_markup_watch"
+        return "sessionId must be a non-empty string." if args.key?("sessionId") && !nonempty_string?(args["sessionId"])
+        unless !args.key?("timeoutSeconds") || numeric_between?(args["timeoutSeconds"], 0, 300)
+          return "timeoutSeconds must be a number from 0 to 300."
+        end
+        unless !args.key?("batchWindowSeconds") || numeric_between?(args["batchWindowSeconds"], 0, 60)
+          return "batchWindowSeconds must be a number from 0 to 60."
+        end
       end
     end
 
     def blank?(value)
       value.nil? || (value.respond_to?(:empty?) && value.empty?)
+    end
+
+    def nonempty_string?(value)
+      value.is_a?(String) && !value.empty?
+    end
+
+    def numeric_between?(value, minimum, maximum)
+      value.is_a?(Numeric) && value.finite? && value.between?(minimum, maximum)
     end
 
     def invalid_arguments_response(id, unknown)
@@ -388,11 +432,15 @@ module RailsMarkup
       when "session"
         handle_local_or_proxy(:get_session, args) do
           session = @store.get_session(args["sessionId"])
-          session ? @store.serialize_session(session) : { error: "Session not found" }
+          fail ToolError, "Session not found." unless session
+
+          @store.serialize_session(session)
         end
       when "annotation"
         annotation = @store.get_annotation(args["annotationId"])
-        annotation ? @store.serialize_annotation(annotation) : { error: "Annotation not found" }
+        fail ToolError, "Annotation not found." unless annotation
+
+        @store.serialize_annotation(annotation)
       when "pending"
         action = args["sessionId"] ? :get_pending : :get_all_pending
         handle_local_or_proxy(action, args) do
@@ -411,7 +459,9 @@ module RailsMarkup
 
       handle_local_or_proxy(action.to_sym, args) do
         annotation = @store.public_send(action, args["annotationId"], **params)
-        annotation ? @store.serialize_annotation(annotation) : { error: "Annotation not found" }
+        fail ToolError, "Annotation not found." unless annotation
+
+        @store.serialize_annotation(annotation)
       end
     end
 
@@ -424,7 +474,7 @@ module RailsMarkup
       when :list_sessions
         []
       when :get_session
-        { error: "Sessions not available when using dev API proxy" }
+        fail ToolError, "Sessions are not available through the configured development API."
       when :get_pending, :get_all_pending
         dev_fetch_pending(target)
       when :acknowledge
@@ -442,9 +492,7 @@ module RailsMarkup
 
     def dev_fetch_pending(target)
       resp = http_get(external_api_url(target, "pending"))
-      return { error: "Dev API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
-
-      data = JSON.parse(resp.body)
+      data = remote_json(resp)
       { count: (data["annotations"] || []).size, annotations: data["annotations"] || [] }
     end
 
@@ -452,9 +500,7 @@ module RailsMarkup
       return { error: "No annotationId provided." } unless annotation_id
 
       resp = http_patch(external_api_url(target, annotation_id, action), params: params)
-      return { error: "Dev API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
-
-      JSON.parse(resp.body)
+      remote_json(resp)
     end
 
     # ── Production API ────────────────────────────────────────
@@ -462,9 +508,7 @@ module RailsMarkup
     def handle_fetch_production(args)
       target, token = production_target
       resp = http_get(external_api_url(target, "pending"), token: token)
-      return { error: "API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
-
-      data = JSON.parse(resp.body)
+      data = remote_json(resp)
       annotations = data["annotations"] || []
 
       { count: annotations.size, annotations: annotations }
@@ -476,9 +520,7 @@ module RailsMarkup
 
       target, token = production_target
       resp = http_patch(external_api_url(target, annotation_id, action), token: token, params: params)
-      return { error: "API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
-
-      JSON.parse(resp.body)
+      remote_json(resp)
     end
 
     def handle_remote_annotation(args)
@@ -489,9 +531,7 @@ module RailsMarkup
         token = nil
       end
       resp = http_get(external_api_url(target, args["annotationId"]), token: token)
-      return { error: "API error: #{resp.code} #{resp.body}" } unless resp.is_a?(Net::HTTPSuccess)
-
-      JSON.parse(resp.body)
+      remote_json(resp)
     end
 
     def production_target
@@ -501,6 +541,20 @@ module RailsMarkup
       fail TargetError, "Production token is not configured. Run bin/markup configure." if blank?(prod_token)
 
       [target, prod_token]
+    end
+
+    def remote_json(response)
+      unless response.is_a?(Net::HTTPSuccess)
+        code = response.code.to_i
+        if [401, 403].include?(code)
+          fail ToolError, "Authentication failed for the configured Rails Markup server."
+        end
+        fail ToolError, "Remote Rails Markup server returned HTTP #{code}."
+      end
+
+      JSON.parse(response.body)
+    rescue JSON::ParserError
+      fail ToolError, "Remote Rails Markup server returned invalid JSON."
     end
 
     # ── HTTP helpers ──────────────────────────────────────────
