@@ -284,7 +284,8 @@ module RailsMarkup
       when "tools/list"
         result_response(id, { tools: TOOLS })
       when "tools/call"
-        handle_tool_call(id, params["name"], params["arguments"] || {})
+        arguments = params.key?("arguments") ? params["arguments"] : {}
+        handle_tool_call(id, params["name"], arguments)
       when "ping"
         result_response(id, {})
       else
@@ -351,7 +352,7 @@ module RailsMarkup
     end
 
     def validation_error(name, args)
-      environment = args["environment"] || "development"
+      environment = args.key?("environment") ? args["environment"] : "development"
       return "environment must be development or production." unless %w[development production].include?(environment)
 
       case name
@@ -399,8 +400,8 @@ module RailsMarkup
       value.is_a?(Numeric) && value.finite? && value.between?(minimum, maximum)
     end
 
-    def invalid_arguments_response(id, unknown)
-      tool_error_response(id, "Remove unsupported arguments: #{unknown.sort.join(', ')}.")
+    def invalid_arguments_response(id, _unknown)
+      tool_error_response(id, "Remove unsupported arguments.")
     end
 
     def tool_error_response(id, message)

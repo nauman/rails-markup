@@ -153,6 +153,58 @@ class McpServerTest < Minitest::Test
     end
   end
 
+  def test_unknown_argument_error_never_reflects_caller_controlled_key_names
+    malicious_key = "private annotation content bearer-secret"
+    response = nil
+    stderr = capture_stderr do
+      response = raw_tool_call_response(
+        "rails_markup_read",
+        { "resource" => "pending", malicious_key => "private request payload" }
+      )
+    end
+
+    combined = response.to_json + stderr
+    assert_equal true, response.dig("result", "isError")
+    assert_match(/Remove unsupported arguments\./, response.dig("result", "content", 0, "text"))
+    refute_includes combined, malicious_key
+    refute_includes combined, "private request payload"
+    refute_includes combined, "bearer-secret"
+  end
+
+  def test_explicit_non_object_tool_arguments_are_rejected_in_band
+    [false, nil, [], "scalar", 123].each do |arguments|
+      response = raw_tool_call_response("rails_markup_read", arguments)
+      assert_equal true, response.dig("result", "isError"), arguments.inspect
+      assert_match(/arguments must be an object/i, response.dig("result", "content", 0, "text"))
+    end
+  end
+
+  def test_explicit_false_watch_arguments_do_not_start_watch
+    subscribed = false
+    @store.define_singleton_method(:subscribe) do |*args|
+      subscribed = true
+      raise "watch should not start"
+    end
+
+    response = raw_tool_call_response("rails_markup_watch", false)
+    assert_equal true, response.dig("result", "isError")
+    assert_match(/arguments must be an object/i, response.dig("result", "content", 0, "text"))
+    refute subscribed
+  end
+
+  def test_environment_defaults_only_when_omitted
+    assert_equal [], call_tool("rails_markup_read", resource: "pending")
+
+    [false, nil].each do |environment|
+      response = raw_tool_call_response(
+        "rails_markup_read",
+        { "resource" => "pending", "environment" => environment }
+      )
+      assert_equal true, response.dig("result", "isError"), environment.inspect
+      assert_match(/environment must be development or production/i, response.dig("result", "content", 0, "text"))
+    end
+  end
+
   def test_legacy_alias_table_maps_every_supported_name_to_canonical_tools
     expected = {
       "rails_markup_sessions" => ["rails_markup_read", { "resource" => "sessions" }],
@@ -724,8 +776,14 @@ class McpServerTest < Minitest::Test
   end
 
   def call_tool_response(name, **args)
+    raw_tool_call_response(name, args.transform_keys(&:to_s))
+  end
+
+  def raw_tool_call_response(name, arguments = :omitted)
     @output = StringIO.new
-    input = StringIO.new(jsonrpc_request(1, "tools/call", { name: name, arguments: args.transform_keys(&:to_s) }))
+    params = { name: name }
+    params[:arguments] = arguments unless arguments == :omitted
+    input = StringIO.new(jsonrpc_request(1, "tools/call", params))
     mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
     mcp.start
     parse_output
