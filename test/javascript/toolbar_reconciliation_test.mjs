@@ -294,6 +294,7 @@ test("invalid or incomplete pull responses never mutate state or delete absent r
   for (const response of [
     { error: "not an array" },
     [serverRepresentation(localId), { broken: true }],
+    [serverRepresentation(localId), serverRepresentation(serverOnlyId, { clientId: null })],
     [serverRepresentation(localId, { pageUrl: "/products?open=2" })],
     [serverRepresentation(localId), serverRepresentation(localId)]
   ]) {

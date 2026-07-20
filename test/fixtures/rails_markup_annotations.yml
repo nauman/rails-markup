@@ -2,6 +2,7 @@
 # Table: rails_markup_annotations
 
 pending_fix:
+  client_uuid: 30dc4db8-935f-4202-8f5d-eb18452cda3f
   page_url: /sites/inventlist
   content: Button padding is off on mobile — needs 12px instead of 8px
   intent: fix
@@ -15,6 +16,7 @@ pending_fix:
   updated_at: <%= 2.hours.ago.iso8601 %>
 
 acknowledged_change:
+  client_uuid: b4f9daf0-aeb4-4d43-9a1f-955340bf75de
   page_url: /sites/inventlist
   content: Font size on hero heading should be 48px for desktop
   intent: change
@@ -28,6 +30,7 @@ acknowledged_change:
   updated_at: <%= 12.hours.ago.iso8601 %>
 
 resolved_fix:
+  client_uuid: 93dd711a-bd46-475e-8603-2d70a64db79f
   page_url: /users/nauman
   content: Avatar image stretched on narrow viewports
   intent: fix
@@ -41,6 +44,7 @@ resolved_fix:
   updated_at: <%= 6.hours.ago.iso8601 %>
 
 dismissed_question:
+  client_uuid: 61814c65-caa2-4676-b495-864221ccb268
   page_url: /sites/inventlist/updates
   content: Should we add dark mode to the ship timeline?
   intent: question
@@ -54,6 +58,7 @@ dismissed_question:
   updated_at: <%= 1.day.ago.iso8601 %>
 
 other_page_pending:
+  client_uuid: 262b5c3f-ee6d-477d-b4a3-51c81f489438
   page_url: /tools/rails-markup
   content: Install command should use gem install not bundle add
   intent: change

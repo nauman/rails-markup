@@ -152,7 +152,8 @@ module RailsMarkup
     def annotation_params
       permitted = params.permit(:page_url, :content, :intent, :severity, :selected_text, :selectedText, :clientId, target: {}, metadata: {})
       permitted[:selected_text] ||= permitted.delete(:selectedText)
-      permitted[:client_uuid] = permitted.delete(:clientId).to_s.strip.presence
+      requested_client_uuid = permitted.delete(:clientId).to_s.strip
+      permitted[:client_uuid] = requested_client_uuid if Annotation.valid_client_uuid?(requested_client_uuid)
       permitted[:page_url] ||= request.referer || "/"
       permitted[:target] = normalize_target(params[:target]) if params[:target].present?
       permitted[:metadata] = normalize_hash(params[:metadata], ALLOWED_METADATA_KEYS) if params[:metadata].present?
@@ -174,7 +175,7 @@ module RailsMarkup
 
     def normalized_route_uuid
       uuid = params[:client_uuid].to_s.strip
-      uuid if uuid.present? && uuid.length <= 64
+      uuid if Annotation.valid_client_uuid?(uuid)
     end
 
     def normalized_dirty_fields
@@ -191,7 +192,7 @@ module RailsMarkup
     end
 
     def render_invalid_uuid
-      render json: { error: "client uuid must be present and at most 64 characters" }, status: :unprocessable_entity
+      render json: { error: "client uuid must be a canonical UUID" }, status: :unprocessable_entity
     end
 
     def render_invalid_metadata

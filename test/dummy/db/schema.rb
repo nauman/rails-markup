@@ -12,7 +12,7 @@ ActiveRecord::Schema.define do
     t.text :selected_text
     t.text :metadata, default: "{}"
     t.text :thread, default: "[]"
-    t.string :client_uuid
+    t.string :client_uuid, null: false
 
     t.timestamps
   end

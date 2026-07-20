@@ -108,6 +108,19 @@ module RailsMarkup
       end
     end
 
+    test "new annotations receive a canonical client UUID" do
+      annotation = Annotation.create!(content: "Generated identity", page_url: "/test")
+
+      assert Annotation.valid_client_uuid?(annotation.client_uuid)
+    end
+
+    test "noncanonical client UUIDs are rejected" do
+      annotation = Annotation.new(content: "Invalid identity", page_url: "/test", client_uuid: "client-123")
+
+      assert_not annotation.valid?
+      assert_includes annotation.errors[:client_uuid], "is invalid"
+    end
+
     # --- Scopes ---
 
     test "pending scope returns only pending annotations" do
@@ -371,9 +384,10 @@ module RailsMarkup
     end
 
     test "as_api_json includes clientId" do
-      annotation = Annotation.new(content: "Test", page_url: "/test", client_uuid: "client-123")
+      client_uuid = "e43bc83a-7207-499d-8500-9ae1f451ac5e"
+      annotation = Annotation.new(content: "Test", page_url: "/test", client_uuid: client_uuid)
 
-      assert_equal "client-123", annotation.as_api_json[:clientId]
+      assert_equal client_uuid, annotation.as_api_json[:clientId]
     end
 
     test "as_api_json authorName is nil when no author" do

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "securerandom"
+
 module RailsMarkup
   class Annotation < ActiveRecord::Base
     self.table_name = RailsMarkup.config.table_name
@@ -9,6 +11,7 @@ module RailsMarkup
     STATUSES = %w[pending acknowledged resolved dismissed].freeze
     BROWSER_ATTRIBUTES = %w[content intent severity selected_text target page_url].freeze
     BROWSER_METADATA_KEYS = %w[tool url localId sessionId screenshot].freeze
+    CLIENT_UUID_PATTERN = /\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i
 
     # Optional user association — no FK constraint, engine doesn't know host users table
     belongs_to :user, optional: true
@@ -21,11 +24,17 @@ module RailsMarkup
     validates :content, presence: true, length: { maximum: 5000 }
     validates :page_url, presence: true, length: { maximum: 2048 }
     validates :selected_text, length: { maximum: 2000 }, allow_nil: true
-    validates :client_uuid, length: { maximum: 64 }, allow_nil: true
+    before_validation :ensure_client_uuid
+
+    validates :client_uuid, presence: true, length: { maximum: 64 }, format: { with: CLIENT_UUID_PATTERN }
     validates :intent, inclusion: { in: INTENTS }
     validates :severity, inclusion: { in: SEVERITIES }
     validates :status, inclusion: { in: STATUSES }
     validate :thread_must_be_array
+
+    def self.valid_client_uuid?(value)
+      value.is_a?(String) && CLIENT_UUID_PATTERN.match?(value)
+    end
 
     scope :pending, -> { where(status: "pending") }
     scope :acknowledged, -> { where(status: "acknowledged") }
@@ -123,6 +132,10 @@ module RailsMarkup
     end
 
     private
+
+    def ensure_client_uuid
+      self.client_uuid = SecureRandom.uuid if client_uuid.blank?
+    end
 
     def add_thread_entry(role:, message:)
       self.thread = thread + [{ "role" => role, "message" => message, "timestamp" => Time.current.iso8601 }]
