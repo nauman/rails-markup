@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "test": "node --test test/javascript/*_test.mjs"
+  },
+  "devDependencies": {
+    "@hotwired/turbo": "8.0.23",
+    "happy-dom": "20.11.0"
+  }
+}

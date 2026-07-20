@@ -7,3 +7,4 @@ test/dummy/log/
 
 # System-test scratch DB
 test/dummy/db/*.sqlite3
+node_modules/

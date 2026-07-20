@@ -13,6 +13,7 @@
   const RailsMarkupToolbar = {
     // State
     annotations: [],
+    outbox: {},
     nextId: 1,
     active: false,
     serverOnline: false,
@@ -47,6 +48,8 @@
 
     init(opts = {}) {
       const previousPathname = this._currentPathname;
+      const previousPageUrl = this._currentPageUrl;
+      const currentPageUrl = this._pageUrl();
       this.endpoint = opts.endpoint || "/feedback/api";
       this.accent = opts.accent || "indigo";
       this.position = opts.position || "bl";
@@ -56,12 +59,14 @@
       this.healthIntervalMs = (opts.healthInterval || 60) * 1000;
 
       if (document.getElementById("rm-toolbar-root")) {
-        if (window.location.pathname !== this._currentPathname) this._onTurboNavigate();
+        if (currentPageUrl !== this._currentPageUrl) this._onTurboNavigate();
         return;
       }
 
       if (previousPathname && previousPathname !== window.location.pathname) this._deactivateMode();
+      if (previousPageUrl && previousPageUrl !== currentPageUrl && previousPathname === window.location.pathname) this._deactivateMode();
       this._currentPathname = window.location.pathname;
+      this._currentPageUrl = currentPageUrl;
       this._injectStyles();
       this._injectDOM();
       this._bindEvents();
@@ -74,7 +79,7 @@
       }
       this._renderPins();
       this._updateCount();
-      if (previousPathname && previousPathname !== this._currentPathname && this.serverOnline) this._initSession();
+      if (previousPageUrl && previousPageUrl !== this._currentPageUrl && this.serverOnline) this._initSession();
     },
 
     destroy() {
@@ -354,11 +359,13 @@
     // ---- Turbo integration ----
 
     _currentPathname: null,
+    _currentPageUrl: null,
 
     _onTurboNavigate() {
-      const newPath = window.location.pathname;
-      if (newPath === this._currentPathname) return; // same page (anchor change, etc.)
-      this._currentPathname = newPath;
+      const newPageUrl = this._pageUrl();
+      if (newPageUrl === this._currentPageUrl) return; // same page (anchor change, etc.)
+      this._currentPathname = window.location.pathname;
+      this._currentPageUrl = newPageUrl;
 
       // Deactivate crosshair mode
       this._deactivateMode();
@@ -658,7 +665,8 @@
         selectedText: this.selectedText || null,
         screenshot: screenshot || null,
         url: window.location.href,
-        pathname: window.location.pathname,
+        pathname: this._pageUrl(),
+        pageUrl: this._pageUrl(),
         timestamp: new Date().toISOString(),
         status: "pending",
         thread: []
@@ -874,9 +882,9 @@
       const container = document.getElementById("rm-pins-container");
       if (container) container.innerHTML = "";
       // Only render pins for annotations on the current page
-      const currentPath = window.location.pathname;
+      const currentPath = this._pageUrl();
       this.annotations
-        .filter(a => a.pathname === currentPath)
+        .filter(a => (a.pageUrl || a.pathname) === currentPath)
         .forEach(a => this._renderPin(a));
     },
 
@@ -940,12 +948,13 @@
     // ---- Storage ----
 
     _storageKey() { return "rm-annotations"; },
-    _pageStorageKey() { return "rm-annotations:" + window.location.pathname; },
+    _pageUrl() { return window.location.pathname + window.location.search; },
+    _pageStorageKey() { return "rm-annotations:" + this._pageUrl(); },
 
     _saveToStorage() {
       try {
         // Save all annotations to a single global key
-        localStorage.setItem(this._storageKey(), JSON.stringify({ annotations: this.annotations, nextId: this.nextId }));
+        localStorage.setItem(this._storageKey(), JSON.stringify({ annotations: this.annotations, nextId: this.nextId, outbox: this.outbox }));
         // Also keep per-page key for backwards compat (migrate on next load)
         localStorage.removeItem(this._pageStorageKey());
       }
@@ -962,10 +971,12 @@
             this.annotations = data.annotations;
             this.nextId = data.nextId || (this.annotations.length + 1);
           }
+          this.outbox = data.outbox && typeof data.outbox === "object" ? data.outbox : {};
         }
         // Migrate any old per-page annotations into global store
         this._migratePageAnnotations();
-        this._backfillClientIds();
+        this._normalizeStoredState();
+        this._saveToStorage();
         this._rebuildList();
         this._updateCount();
       } catch (e) { console.warn("[rails-markup] load failed:", e); }
@@ -997,23 +1008,104 @@
         }
       }
       keysToRemove.forEach(k => localStorage.removeItem(k));
-      if (keysToRemove.length > 0) this._saveToStorage();
+      return keysToRemove.length > 0;
     },
 
-    _backfillClientIds() {
-      let changed = false;
-      this.annotations.forEach(annotation => {
+    _normalizeStoredState() {
+      if (!this.outbox || typeof this.outbox !== "object" || Array.isArray(this.outbox)) this.outbox = {};
+
+      const normalized = this.annotations.map((annotation, index) => {
         if (!annotation.clientId) {
           annotation.clientId = this._newClientId();
-          changed = true;
+        }
+        if (annotation.serverId == null) annotation.serverId = annotation.server_id ?? null;
+        if (annotation.serverUpdatedAt == null) annotation.serverUpdatedAt = annotation.server_updated_at ?? null;
+        if (!Array.isArray(annotation.dirtyFields)) annotation.dirtyFields = [];
+        annotation.pageUrl = annotation.pageUrl || annotation.pathname || this._pageUrl();
+        annotation.pathname = annotation.pageUrl;
+
+        return { annotation, index };
+      });
+
+      const byClientId = new Map();
+      normalized.forEach(candidate => {
+        const current = byClientId.get(candidate.annotation.clientId);
+        if (!current || this._isNewerLocalRecord(candidate, current)) byClientId.set(candidate.annotation.clientId, candidate);
+      });
+      this.annotations = Array.from(byClientId.values())
+        .sort((left, right) => left.index - right.index)
+        .map(candidate => candidate.annotation);
+
+      this._assignDisplayIds();
+      this.annotations.forEach(annotation => {
+        const mapped = annotation.serverId != null;
+        const queued = Boolean(this.outbox[annotation.clientId]);
+        annotation.syncState = (queued && annotation.syncState === "failed")
+          ? "failed"
+          : ((queued || !mapped) ? "pending" : "synced");
+        if (!this.outbox[annotation.clientId] && !mapped) {
+          annotation.dirtyFields = this._legacyDirtyFields(annotation);
+          this.outbox[annotation.clientId] = {
+            type: "upsert",
+            annotation: this._desiredState(annotation),
+            dirtyFields: annotation.dirtyFields.slice()
+          };
         }
       });
-      if (changed) this._saveToStorage();
+    },
+
+    _isNewerLocalRecord(candidate, current) {
+      const timestamp = value => {
+        const parsed = Date.parse(value || "");
+        return Number.isNaN(parsed) ? -Infinity : parsed;
+      };
+      const candidateUpdatedAt = timestamp(candidate.annotation.updatedAt || candidate.annotation.updated_at);
+      const currentUpdatedAt = timestamp(current.annotation.updatedAt || current.annotation.updated_at);
+      if (candidateUpdatedAt !== currentUpdatedAt) return candidateUpdatedAt > currentUpdatedAt;
+
+      const candidateServerUpdatedAt = timestamp(candidate.annotation.serverUpdatedAt || candidate.annotation.server_updated_at);
+      const currentServerUpdatedAt = timestamp(current.annotation.serverUpdatedAt || current.annotation.server_updated_at);
+      if (candidateServerUpdatedAt !== currentServerUpdatedAt) return candidateServerUpdatedAt > currentServerUpdatedAt;
+      return candidate.index > current.index;
+    },
+
+    _assignDisplayIds() {
+      const validIds = this.annotations
+        .map(annotation => annotation.id)
+        .filter(id => Number.isInteger(id) && id > 0);
+      let candidateId = Math.max(1, Number.isInteger(this.nextId) ? this.nextId : 1, ...validIds.map(id => id + 1));
+      const usedIds = new Set();
+
+      this.annotations.forEach(annotation => {
+        if (!Number.isInteger(annotation.id) || annotation.id <= 0 || usedIds.has(annotation.id)) {
+          while (usedIds.has(candidateId)) candidateId += 1;
+          annotation.id = candidateId++;
+        }
+        usedIds.add(annotation.id);
+      });
+
+      this.nextId = Math.max(candidateId, ...Array.from(usedIds, id => id + 1), 1);
+    },
+
+    _legacyDirtyFields(annotation) {
+      const fields = ["content", "intent", "severity", "selectedText", "target", "metadata"];
+      if (annotation.status && annotation.status !== "pending") fields.push("status");
+      return fields;
+    },
+
+    _desiredState(annotation) {
+      return JSON.parse(JSON.stringify(annotation));
     },
 
     _newClientId() {
       if (global.crypto && typeof global.crypto.randomUUID === "function") return global.crypto.randomUUID();
-      return "rm-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 14);
+      const bytes = new Uint8Array(16);
+      if (global.crypto && typeof global.crypto.getRandomValues === "function") global.crypto.getRandomValues(bytes);
+      else bytes.forEach((_, index) => { bytes[index] = Math.floor(Math.random() * 256); });
+      bytes[6] = (bytes[6] & 0x0f) | 0x40;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+      const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
     },
 
     // ---- Server sync ----
@@ -1071,7 +1163,7 @@
         await fetch(this.endpoint + "/sessions/" + (this.sessionId || "local") + "/annotations", {
           method: "POST", headers, credentials: "same-origin",
           body: JSON.stringify({
-            page_url: annotation.pathname,
+            page_url: this._pageUrl(),
             clientId: annotation.clientId,
             content: annotation.comment,
             intent: annotation.intent,
