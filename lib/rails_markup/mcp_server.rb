@@ -589,6 +589,7 @@ module RailsMarkup
     # ── Watch mode ────────────────────────────────────────────
 
     def handle_watch(args)
+      sub = nil
       timeout = [args["timeoutSeconds"]&.to_i || 120, 300].min
       batch_window = [args["batchWindowSeconds"]&.to_i || 10, 60].min
       session_id = args["sessionId"]
@@ -615,8 +616,9 @@ module RailsMarkup
         sleep 0.5
       end
 
-      @store.unsubscribe(sub)
       batch
+    ensure
+      @store.unsubscribe(sub) unless sub.nil?
     end
 
     # ── JSON-RPC responses ────────────────────────────────────

@@ -378,6 +378,40 @@ class McpServerTest < Minitest::Test
     assert_equal [], result
   end
 
+  def test_watch_unsubscribes_exact_subscription_when_timing_loop_raises
+    subscription = Object.new
+    unsubscribed = []
+    @store.define_singleton_method(:subscribe) { |_session_id, &block| subscription }
+    @store.define_singleton_method(:unsubscribe) { |candidate| unsubscribed << candidate }
+    input = StringIO.new(jsonrpc_request(1, "tools/call", {
+      name: "rails_markup_watch", arguments: { timeoutSeconds: 1 }
+    }))
+    mcp = RailsMarkup::McpServer.new(store: @store, input: input, output: @output)
+    mcp.define_singleton_method(:sleep) { |_seconds| raise Timeout::Error, "timing failure" }
+
+    mcp.start
+
+    response = parse_output
+    assert_equal true, response.dig("result", "isError")
+    assert_match(/timed out/i, response.dig("result", "content", 0, "text"))
+    assert_equal 1, unsubscribed.size
+    assert_same subscription, unsubscribed.first
+  end
+
+  def test_watch_does_not_unsubscribe_when_subscription_fails
+    unsubscribed = []
+    @store.define_singleton_method(:subscribe) { |_session_id, &block| raise SocketError, "subscribe failed" }
+    @store.define_singleton_method(:unsubscribe) { |candidate| unsubscribed << candidate }
+    input = StringIO.new(jsonrpc_request(1, "tools/call", {
+      name: "rails_markup_watch", arguments: { timeoutSeconds: 0 }
+    }))
+
+    RailsMarkup::McpServer.new(store: @store, input: input, output: @output).start
+
+    assert_equal true, parse_output.dig("result", "isError")
+    assert_empty unsubscribed
+  end
+
   def test_legacy_fetch_production_injects_environment
     result = call_tool("rails_markup_fetch_production")
     assert_match(/No production URL/, result["error"])
