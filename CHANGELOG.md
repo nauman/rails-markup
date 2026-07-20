@@ -13,10 +13,17 @@ All notable changes to this project will be documented in this file.
 - Keyset (cursor) pagination for the dashboard "Load more".
 - `thor` and `lipgloss` declared as explicit runtime dependencies; `csv` pinned.
 - Install generator `--table-name` option that writes the chosen table into both the migration and `config.table_name` for fresh custom-table installs.
+- Authenticated exact-page pull plus idempotent UUID PUT/DELETE endpoints for durable browser synchronization.
+- A Rails-authoritative desired-state outbox with offline create/edit/status/delete replay and server reconciliation.
+- Five canonical thin-enum MCP tools: `read`, `watch`, `transition`, `reply`, and destructive `dismiss`.
+- A real Turbo-loaded Cuprite system test covering browser creation and server-to-panel reconciliation.
 
 ### Changed
 
 - Minimum Ruby is now 3.2 (aligns with the resolved Rails 8.1 baseline); CI matrix is 3.2–3.4.
+- The dashboard and toolbar API now share the configured host authentication boundary and Rails CSRF protection.
+- MCP destinations and bearer credentials now come only from trusted configuration; legacy aliases remain hidden adapters and will be removed after 1.3.0.
+- Generated authentication denies non-admin users by default and requires explicit host-policy customization when `current_user.admin?` is not the application contract.
 
 ### Fixed
 
@@ -35,6 +42,9 @@ All notable changes to this project will be documented in this file.
 - Legacy numeric/string toolbar IDs now map to deterministic canonical UUIDs scoped by session, preserving exact replay and conflict detection without colliding after local storage is reset.
 - Existing-install UUID backfill remains nullable during mixed-version deployment; invalid rows fail pulls closed and can be repaired idempotently before a later explicit `NOT NULL` contract migration.
 - Client UUIDs are normalized to lowercase across POST/PUT/DELETE paths; repair resolves case-fold collisions deterministically and requires a full, unpredicated, unprefixed unique index.
+- Toolbar mutations persist before network I/O, coalesce safely, retain in-flight replacements, and classify authentication, terminal, retryable, and malformed responses without losing desired state.
+- Pull reconciliation preserves dirty browser-owned fields and delete tombstones while accepting server-owned thread, identity, timestamps, and agent status/replies.
+- MCP rejects URL/token overrides, confines remote failures in-band, redacts secrets, and remains live after malformed JSON-RPC or remote responses.
 
 ## [1.0.0] - 2026-03-12
 

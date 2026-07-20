@@ -10,7 +10,7 @@ Point-and-click annotation tool for Rails apps. Click any element, describe what
 2. **Open your app** — the annotation toolbar appears as a floating button
 3. **Click any element** — hover to highlight, click to annotate with screenshots
 4. **Draw on screenshots** — arrows, rectangles, highlights on captured elements
-5. **Agent reads it** — AI calls `rails_markup_pending` via MCP
+5. **Agent reads it** — AI calls `rails_markup_read` via MCP
 6. **Agent fixes it** — resolves the annotation and moves on
 
 ## Install
@@ -42,7 +42,7 @@ still be serving traffic. Fresh installs create it as `NOT NULL` immediately.
 For a rolling upgrade:
 
 1. Run the copied migrations and deploy 1.2 to every application instance.
-2. Wait until every pre-1.2 instance has stopped.
+2. Wait until all old pre-1.2 instances are drained and have stopped.
 3. Repair any rows written during the mixed-version window, then verify:
 
 ```bash
@@ -75,6 +75,25 @@ rails generate rails_markup:install \
   --layout=application
 ```
 
+### Authentication and browser synchronization
+
+The generated `RailsMarkupAuthController` protects both the mounted dashboard
+and the toolbar API. It denies access unless `current_user.admin?` is true;
+customize `authorize_rails_markup!` if your host uses another authorization
+policy. The configured base controller must actually enforce authorization.
+Choosing a public controller makes both interfaces public.
+
+The toolbar uses the same host authentication boundary as the dashboard and
+sends normal Rails CSRF tokens on every mutation. Keep `csrf_meta_tags` in the
+host layout. Rails is authoritative; localStorage is an offline cache and a
+durable desired-state outbox, keyed by a client UUID.
+
+During reconciliation, browser-owned content, intent, severity, selection,
+target, permitted metadata, and an explicitly dirty status remain local until a
+successful UUID PUT. Server-owned thread, author/user identity, and timestamps
+always win. A complete exact-page pull may remove a synced local record absent
+from Rails, but never removes pending upserts or delete tombstones.
+
 ### Uninstall
 
 ```bash
@@ -87,8 +106,8 @@ rails generate rails_markup:uninstall
 ```ruby
 # config/initializers/rails_markup.rb
 RailsMarkup.configure do |config|
-  # Auth controller for dashboard
-  config.base_controller_class = "Admin::BaseController"
+  # Auth controller for dashboard and toolbar API; it must authorize access.
+  config.base_controller_class = "RailsMarkupAuthController"
 
   # External API token (for MCP production tools)
   config.api_token = Rails.application.credentials.dig(:rails_markup, :api_token)
@@ -213,36 +232,30 @@ Add to `.mcp.json`:
 }
 ```
 
-### MCP Tools (8 Unified)
+### MCP tools (five canonical thin-enum tools)
 
-Each tool accepts an optional `environment` param (`"development"` | `"production"`). Default: `"development"`.
+The MCP server advertises exactly five tools. Their schemas reject unknown
+arguments and use small enums instead of multiplying environment-specific tool
+names:
 
-| Tool | Purpose |
-|------|---------|
-| `rails_markup_sessions` | List active sessions (dev only) |
-| `rails_markup_session` | Get session with all annotations (dev only) |
-| `rails_markup_pending` | All pending (pass `sessionId` to filter, `environment: "production"` for prod) |
-| `rails_markup_watch` | Block until new annotations arrive |
-| `rails_markup_acknowledge` | Mark as seen |
-| `rails_markup_resolve` | Resolve with summary |
-| `rails_markup_dismiss` | Dismiss with reason |
-| `rails_markup_reply` | Add reply to thread |
+| Tool | Contract |
+|------|----------|
+| `rails_markup_read` | Read `pending`, `sessions`, `session`, or `annotation`; never acknowledges |
+| `rails_markup_watch` | Watch development annotations with bounded timeout/window |
+| `rails_markup_transition` | `acknowledge` or `resolve` an annotation |
+| `rails_markup_reply` | Add an agent reply |
+| `rails_markup_dismiss` | Destructively dismiss with a reason |
 
-### Migrating from Legacy Tool Names
+`environment` is `development` or `production` where supported. Production URL
+and bearer credentials come only from trusted process configuration.
+Caller-supplied URL and token overrides are rejected and are never forwarded.
 
-Old names still work but emit deprecation warnings. They will be removed in v1.3.0.
+### Legacy MCP compatibility
 
-| Old Name | New Name |
-|----------|----------|
-| `rails_markup_get_all_pending` | `rails_markup_pending` |
-| `rails_markup_get_pending` | `rails_markup_pending` (with `sessionId`) |
-| `rails_markup_list_sessions` | `rails_markup_sessions` |
-| `rails_markup_get_session` | `rails_markup_session` |
-| `rails_markup_watch_annotations` | `rails_markup_watch` |
-| `rails_markup_fetch_production` | `rails_markup_pending` (with `environment: "production"`) |
-| `rails_markup_resolve_production` | `rails_markup_resolve` (with `environment: "production"`) |
-| `rails_markup_dismiss_production` | `rails_markup_dismiss` (with `environment: "production"`) |
-| `rails_markup_reply_production` | `rails_markup_reply` (with `environment: "production"`) |
+Legacy names remain hidden but callable as explicit, warning-emitting adapters
+during the 1.2/1.3 compatibility window. They never restore caller-controlled
+credentials or mutating reads. They will be removed after 1.3.0; migrate clients
+to the five canonical tools above.
 
 ## Annotation Data
 
@@ -264,8 +277,8 @@ Each annotation includes:
 ```
 Browser Toolbar                    AI Agent (Claude Code, Cursor)
     |                                    |
-    | Same-origin API                    | MCP (stdio JSON-RPC)
-    | (POST /api/*)                      | or CLI (bin/markup pending)
+    | Authenticated same-origin API      | MCP (stdio JSON-RPC)
+    | (pull + UUID PUT/DELETE, CSRF)     | or CLI (bin/markup pending)
     v                                    v
 +----------------------------------------------------------+
 |                  Rails Engine                             |

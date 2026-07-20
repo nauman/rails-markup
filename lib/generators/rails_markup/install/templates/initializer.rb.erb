@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
 RailsMarkup.configure do |config|
-  # Base controller class for dashboard authentication.
-  # Set to a controller that provides admin auth (like Mission Control does).
+  # Base controller class for the dashboard and toolbar API. This controller
+  # must enforce authentication and authorization; a public controller makes
+  # both interfaces public. The generated controller denies non-admin users by
+  # default and is the place to integrate your host application's policy.
   config.base_controller_class = "RailsMarkupAuthController"
 
   # Bearer token for the external API (used by MCP production tools).

@@ -5,6 +5,10 @@ Rails.application.routes.draw do
     only: %i[new create],
     controller: "rails_markup_test_sessions"
 
+  get "/rails_markup_test_assets/turbo.js",
+    to: "rails_markup_test_assets#turbo",
+    as: :rails_markup_test_turbo
+
   mount RailsMarkup::Engine, at: "/feedback"
 
   # Host pages for system tests (toolbar overlay is injected here).

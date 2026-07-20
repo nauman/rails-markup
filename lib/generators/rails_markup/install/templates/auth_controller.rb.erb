@@ -1,7 +1,17 @@
 # frozen_string_literal: true
 
 # Base controller for Rails Markup engine.
-# Inherits authentication from <%= options[:base_controller] %>.
-# Customize this to add authorization logic.
+# Inherits host authentication from <%= options[:base_controller] %> and denies
+# access unless the conventional current_user.admin? contract is satisfied.
+# Customize authorize_rails_markup! when your application uses another policy.
 class RailsMarkupAuthController < <%= options[:base_controller] %>
+  before_action :authorize_rails_markup!
+
+  private
+
+  def authorize_rails_markup!
+    return if respond_to?(:current_user, true) && current_user&.respond_to?(:admin?) && current_user.admin?
+
+    head :forbidden
+  end
 end

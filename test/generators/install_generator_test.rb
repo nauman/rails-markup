@@ -115,6 +115,29 @@ class InstallGeneratorTest < ActiveSupport::TestCase
     assert_match(/options\[:base_controller\]/, content)
   end
 
+  test "auth controller template denies access without an authenticated admin" do
+    template_path = File.expand_path(
+      "../../lib/generators/rails_markup/install/templates/auth_controller.rb.erb",
+      __dir__
+    )
+    content = File.read(template_path)
+
+    assert_match(/before_action :authorize_rails_markup!/, content)
+    assert_match(/current_user.*admin\?/, content)
+    assert_match(/head :forbidden/, content)
+  end
+
+  test "initializer warns that the configured base must enforce authorization" do
+    template_path = File.expand_path(
+      "../../lib/generators/rails_markup/install/templates/initializer.rb.erb",
+      __dir__
+    )
+    content = File.read(template_path)
+
+    assert_match(/must enforce authentication and authorization/i, content)
+    assert_match(/toolbar API/i, content)
+  end
+
   # -- Procfile.dev injection --
 
   test "generator defines inject_procfile method" do
