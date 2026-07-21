@@ -14,6 +14,9 @@ class ToolbarSyncSystemTest < ApplicationSystemTestCase
     assert page.evaluate_script("Boolean(window.Turbo)"), "the host must load real Turbo before the toolbar"
 
     find("#rm-fab").click
+    # Wait for annotation mode to be active (the panel opens) before clicking the
+    # target — otherwise the click can race mode activation on a cold start.
+    assert_selector "#rm-panel", visible: :visible
     find(".host-para").click
     assert_selector "#rm-popup", visible: :visible
 
@@ -25,7 +28,12 @@ class ToolbarSyncSystemTest < ApplicationSystemTestCase
     assert_equal "/host", annotation.page_url
 
     annotation.resolve!(summary: "Spacing updated on the server")
-    page.execute_script("window.RailsMarkupToolbar._pullAnnotations()")
+    # Await the async pull so the convergence assertions don't race a still-in-flight
+    # (or no-op) fetch.
+    page.evaluate_async_script(<<~JS)
+      const done = arguments[0];
+      Promise.resolve(window.RailsMarkupToolbar._pullAnnotations()).then(() => done(true)).catch(() => done(true));
+    JS
 
     assert_selector "#rm-panel", visible: :visible
     assert_selector ".rm-card-body", text: "Increase the spacing"

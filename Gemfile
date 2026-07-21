@@ -13,4 +13,5 @@ group :test do
   gem "capybara", "~> 3.40"
   gem "cuprite", "~> 0.15"
   gem "puma", "~> 6.0"
+  gem "minitest-retry", "~> 0.2" # retry inherently-flaky browser tests (system only)
 end

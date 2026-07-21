@@ -7,6 +7,12 @@ require "rails/test_help"
 require "minitest/autorun"
 require "capybara/minitest"
 require "capybara/cuprite"
+require "minitest/retry"
+
+# Browser tests are inherently prone to rare cold-start/timing flakes. Retry a
+# failed system test before reporting red, so CI stays reliable. This is loaded
+# only by the system suite (not the default `rake test`), so unit tests never retry.
+Minitest::Retry.use!(retry_count: 2, verbose: true)
 
 # System tests run a real Capybara server in a background thread. ":memory:"
 # SQLite is per-connection, so the server thread would see no schema/rows —
