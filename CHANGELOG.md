@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1] - 2026-07-21
+
+### Fixed
+
+- CSV export preserves the dashboard's recent (created_at desc) order — `find_each` ignored `ORDER BY`.
+
+### Changed
+
+- Repository moved to https://github.com/nauman/rails-markup; homepage/source/changelog metadata updated.
+
 ## [1.2.0] - 2026-07-21
 
 ### Added
