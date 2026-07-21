@@ -220,7 +220,9 @@ module RailsMarkup
     def generate_csv(scope)
       CSV.generate(headers: true) do |csv|
         csv << %w[id status intent severity content page_url author selected_text created_at updated_at]
-        scope.find_each do |ann|
+        # each (not find_each) so the export keeps the scope's :recent ordering —
+        # find_each ignores ORDER BY and batches by primary key.
+        scope.each do |ann|
           csv << [ann.id, ann.status, ann.intent, ann.severity, ann.content, ann.page_url,
                   ann.author_name, ann.selected_text, ann.created_at.iso8601, ann.updated_at.iso8601]
         end

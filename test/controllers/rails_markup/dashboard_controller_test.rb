@@ -189,6 +189,19 @@ module RailsMarkup
       assert response.body.include?("id,status,intent")
     end
 
+    test "export_csv preserves recent (created_at desc) order" do
+      old = Annotation.create!(content: "Older row", page_url: "/csv", created_at: 2.days.ago)
+      new = Annotation.create!(content: "Newer row", page_url: "/csv", created_at: 1.hour.ago)
+
+      get rails_markup.export_csv_path(status: "all", page_url: "/csv")
+      assert_response :success
+
+      lines = response.body.split("\n")
+      newer_line = lines.index { |l| l.include?("Newer row") }
+      older_line = lines.index { |l| l.include?("Older row") }
+      assert newer_line < older_line, "recent row must come before older row in the CSV export"
+    end
+
     test "export_json returns JSON file" do
       get rails_markup.export_json_path
       assert_response :success
