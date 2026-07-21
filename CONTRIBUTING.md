@@ -35,7 +35,7 @@ bundle exec rake test
 
 ## Reporting bugs
 
-Open an issue at https://github.com/inventlist/rails-markup/issues with:
+Open an issue at https://github.com/nauman/rails-markup/issues with:
 
 - Ruby version
 - Steps to reproduce

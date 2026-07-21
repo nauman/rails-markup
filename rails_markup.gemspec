@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
 
   spec.summary       = "Point-and-click annotation tool for AI agents"
   spec.description   = "An MCP server that lets you annotate Rails views in the browser and have AI agents read and act on your feedback."
-  spec.homepage      = "https://github.com/inventlist/rails-markup"
+  spec.homepage      = "https://github.com/nauman/rails-markup"
   spec.license       = "MIT"
 
   spec.required_ruby_version = ">= 3.2"

@@ -17,7 +17,7 @@ Point-and-click annotation tool for Rails apps. Click any element, describe what
 
 ```ruby
 # Gemfile
-gem "rails-markup", github: "inventlist/rails-markup", require: "rails_markup"
+gem "rails-markup", github: "nauman/rails-markup", require: "rails_markup"
 ```
 
 ```bash
@@ -294,7 +294,7 @@ Browser Toolbar                    AI Agent (Claude Code, Cursor)
 ## Development
 
 ```bash
-git clone https://github.com/inventlist/rails-markup
+git clone https://github.com/nauman/rails-markup
 cd rails-markup && bundle install
 bundle exec ruby -Ilib:test test/**/*_test.rb
 ```

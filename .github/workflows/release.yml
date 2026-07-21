@@ -7,7 +7,7 @@ name: Release to RubyGems
 # Required repo secret: RUBYGEMS_API_KEY
 #   Create a token at https://rubygems.org/profile/api_keys with the
 #   "push rubygem" scope, then:
-#     gh secret set RUBYGEMS_API_KEY --body "rubygems_xxx" -R inventlist/rails-markup
+#     gh secret set RUBYGEMS_API_KEY --body "rubygems_xxx" -R nauman/rails-markup
 #
 # To cut a release:
 #   1. Bump lib/rails_markup/version.rb + add a CHANGELOG.md entry
