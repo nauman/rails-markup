@@ -158,9 +158,42 @@ footer .row { display: flex; justify-content: space-between; gap: var(--r-4); fl
 footer a { color: var(--np-focus); text-decoration: none; }
 footer a:hover { text-decoration: underline; }
 
+/* ── Interactive demo ───────────────────────────────────────────────────── */
+.demo-frame { border: 1px solid var(--np-paper-edge); border-radius: var(--rad-4); overflow: hidden; box-shadow: 0 24px 60px -30px rgba(15,15,16,.35); background: var(--np-bg); }
+.demo-chrome { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--np-paper-deep); border-bottom: 1px solid var(--np-line); }
+.demo-chrome .dots { display: inline-flex; gap: 6px; }
+.demo-chrome .dots i { width: 11px; height: 11px; border-radius: 50%; background: var(--np-paper-edge); }
+.demo-url { font-family: var(--np-mono); font-size: 12px; color: var(--np-muted); background: var(--np-bg); padding: 4px 12px; border-radius: var(--rad-pill); flex: 1; }
+.demo-stage { position: relative; padding: var(--r-6) var(--r-5); min-height: 320px; background: var(--np-bg); }
+.demo-stage.is-active { cursor: crosshair; }
+.demo-stage.is-active .demo-anno:hover { outline: 2px solid var(--np-focus); outline-offset: 3px; border-radius: 4px; }
+.demo-h { font-family: var(--np-display); font-size: 26px; color: var(--np-ink-runtime); margin: 0 0 6px; }
+.demo-sub { color: var(--np-muted); margin: 0 0 var(--r-5); font-size: 14px; }
+.demo-cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.demo-tier { border: 1px solid var(--np-line); border-radius: var(--rad-3); padding: 16px; background: var(--np-paper-runtime); }
+.demo-tier b { display: block; font-size: 14px; color: var(--np-ink-runtime); }
+.demo-tier span { font-family: var(--np-mono); font-size: 20px; color: var(--np-focus); }
+.demo-tier small { color: var(--np-muted); font-size: 12px; }
+.demo-hint { position: absolute; top: 14px; right: 16px; font-family: var(--np-mono); font-size: 11px; color: var(--np-muted); background: var(--np-paper-deep); padding: 4px 10px; border-radius: var(--rad-pill); transition: opacity var(--t-base); }
+.demo-fab { position: absolute; bottom: 18px; left: 18px; width: 46px; height: 46px; border-radius: 50%; border: none; background: var(--np-focus); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 16px -4px rgba(58,90,63,.5); transition: transform var(--t-base) var(--ease-settle); z-index: 5; }
+.demo-fab:hover { transform: translateY(-2px); }
+.demo-fab.is-active { transform: scale(.92); box-shadow: 0 0 0 4px var(--accent-wash); }
+.demo-fab svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.demo-pin { position: absolute; width: 22px; height: 22px; border-radius: 50%; background: var(--np-focus); color: #fff; font: 700 11px/1 var(--np-sans); display: flex; align-items: center; justify-content: center; transform: translate(-50%, -50%); box-shadow: 0 2px 8px rgba(0,0,0,.25); z-index: 6; animation: pin-pop .3s var(--ease-settle); }
+@keyframes pin-pop { from { transform: translate(-50%,-50%) scale(0); } to { transform: translate(-50%,-50%) scale(1); } }
+.demo-popup { position: absolute; z-index: 7; width: 240px; background: var(--np-bg); border: 1px solid var(--np-line); border-radius: var(--rad-3); box-shadow: 0 20px 44px -20px rgba(0,0,0,.35); padding: 12px; display: none; }
+.demo-popup.is-open { display: block; }
+.demo-popup .el { font-family: var(--np-mono); font-size: 10.5px; color: var(--np-muted-soft); margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.demo-popup textarea { width: 100%; border: 1px solid var(--np-line); border-radius: var(--rad-2); padding: 8px; font: inherit; font-size: 13px; resize: none; outline: none; }
+.demo-popup textarea:focus { border-color: var(--np-focus); }
+.demo-popup .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.demo-popup select { font-size: 11px; border: 1px solid var(--np-line); border-radius: var(--rad-2); padding: 5px 6px; background: var(--np-bg); color: var(--np-text); }
+.demo-popup .add { margin-left: auto; background: var(--np-focus); color: #fff; border: none; border-radius: var(--rad-2); padding: 6px 14px; font-size: 12px; font-weight: 500; cursor: pointer; }
+
 @media (max-width: 560px) {
   .navlinks { gap: var(--r-3); }
   .hero { padding: var(--r-6) 0 var(--r-5); }
+  .demo-stage { padding: var(--r-5) var(--r-4); }
 }
   </style>
 </head>
@@ -174,9 +207,9 @@ footer a:hover { text-decoration: underline; }
       </span>
       <nav class="navlinks">
         <a href="#how">How it works</a>
+        <a href="#demo">Try it</a>
         <a href="#features">Features</a>
-        <a href="#install">Install</a>
-        <a href="https://rubygems.org/gems/rails-markup">RubyGems</a>
+        <a href="https://kuickr.co/rails-markup/docs">Docs</a>
         <a href="https://github.com/nauman/rails-markup">GitHub</a>
       </nav>
     </header>
@@ -201,6 +234,40 @@ footer a:hover { text-decoration: underline; }
         <div class="step"><span class="n">1</span><div><h4>Annotate in the browser</h4><p>Click any element, type what should change, pick an intent (fix / change / question / approve) and severity. Optional element screenshot with arrows &amp; highlights.</p></div></div>
         <div class="step"><span class="n">2</span><div><h4>Agent reads over MCP</h4><p>Your AI agent lists pending annotations through the MCP server and gets the exact element, page, and your note.</p></div></div>
         <div class="step"><span class="n">3</span><div><h4>Fix &amp; resolve</h4><p>The agent edits the code and resolves the annotation with a summary — which syncs back to the pin and the dashboard.</p></div></div>
+      </div>
+    </section>
+
+    <section id="demo">
+      <div class="section-head">
+        <h2>Try it</h2>
+        <p class="section-sub">A live mock of the toolbar. Click the green button, then click any element in the frame to leave an annotation — exactly how it works in your app.</p>
+      </div>
+      <div class="demo-frame">
+        <div class="demo-chrome">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span class="demo-url">localhost:3000/pricing</span>
+        </div>
+        <div class="demo-stage" id="demo-stage">
+          <span class="demo-hint" id="demo-hint">Click the button ↙</span>
+          <h3 class="demo-h demo-anno" data-el="h3.pricing-title">Simple pricing</h3>
+          <p class="demo-sub demo-anno" data-el="p.pricing-sub">Start free. Upgrade when your team grows.</p>
+          <div class="demo-cards">
+            <div class="demo-tier demo-anno" data-el="div.tier--starter"><b>Starter</b><span>$0</span><small>1 project</small></div>
+            <div class="demo-tier demo-anno" data-el="div.tier--team"><b>Team</b><span>$29</span><small>unlimited projects</small></div>
+            <div class="demo-tier demo-anno" data-el="div.tier--scale"><b>Scale</b><span>$99</span><small>SSO + audit log</small></div>
+          </div>
+          <button class="demo-fab" id="demo-fab" title="Toggle annotation mode" aria-label="Toggle annotation mode">
+            <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          </button>
+          <div class="demo-popup" id="demo-popup">
+            <div class="el" id="demo-popup-el"></div>
+            <textarea id="demo-popup-input" rows="2" placeholder="What should change?"></textarea>
+            <div class="row">
+              <select id="demo-popup-intent"><option>change</option><option>fix</option><option>question</option><option>approve</option></select>
+              <button class="add" id="demo-popup-add">Add</button>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -246,6 +313,7 @@ footer a:hover { text-decoration: underline; }
       <div class="row">
         <span>rails-markup — MIT licensed.</span>
         <span>
+          <a href="https://kuickr.co/rails-markup/docs">Docs</a> ·
           <a href="https://rubygems.org/gems/rails-markup">RubyGems</a> ·
           <a href="https://github.com/nauman/rails-markup">GitHub</a> ·
           <a href="https://github.com/nauman/rails-markup/blob/main/CHANGELOG.md">Changelog</a>
@@ -254,5 +322,73 @@ footer a:hover { text-decoration: underline; }
     </footer>
 
   </div>
+
+  <script>
+  (function () {
+    var stage = document.getElementById("demo-stage");
+    var fab = document.getElementById("demo-fab");
+    var popup = document.getElementById("demo-popup");
+    var input = document.getElementById("demo-popup-input");
+    var elLabel = document.getElementById("demo-popup-el");
+    var addBtn = document.getElementById("demo-popup-add");
+    var hint = document.getElementById("demo-hint");
+    if (!stage || !fab) return;
+
+    var active = false, count = 0, target = null;
+
+    function setActive(on) {
+      active = on;
+      stage.classList.toggle("is-active", on);
+      fab.classList.toggle("is-active", on);
+      if (on) { hint.textContent = "Now click any element ↑"; }
+      else { closePopup(); hint.textContent = count ? count + " annotation" + (count > 1 ? "s" : "") + " added" : "Click the button ↙"; }
+    }
+
+    function closePopup() { popup.classList.remove("is-open"); target = null; input.value = ""; }
+
+    fab.addEventListener("click", function (e) { e.stopPropagation(); setActive(!active); });
+
+    stage.addEventListener("click", function (e) {
+      if (!active) return;
+      var el = e.target.closest(".demo-anno");
+      if (!el || el === fab) return;
+      e.preventDefault();
+      target = el;
+      var rect = el.getBoundingClientRect();
+      var srect = stage.getBoundingClientRect();
+      elLabel.textContent = el.getAttribute("data-el") || el.tagName.toLowerCase();
+      var left = Math.min(rect.left - srect.left, stage.clientWidth - 252);
+      var top = Math.min(rect.bottom - srect.top + 8, stage.clientHeight - 130);
+      popup.style.left = Math.max(8, left) + "px";
+      popup.style.top = Math.max(8, top) + "px";
+      popup.classList.add("is-open");
+      setTimeout(function () { input.focus(); }, 30);
+    });
+
+    function commit() {
+      if (!target) return;
+      var rect = target.getBoundingClientRect();
+      var srect = stage.getBoundingClientRect();
+      count += 1;
+      var pin = document.createElement("div");
+      pin.className = "demo-pin";
+      pin.textContent = count;
+      pin.style.left = (rect.right - srect.left - 4) + "px";
+      pin.style.top = (rect.top - srect.top + 4) + "px";
+      pin.title = "#" + count + (input.value ? ": " + input.value : "");
+      stage.appendChild(pin);
+      closePopup();
+      setActive(false);
+    }
+    addBtn.addEventListener("click", commit);
+    input.addEventListener("keydown", function (e) { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") commit(); });
+
+    document.addEventListener("click", function (e) {
+      if (popup.classList.contains("is-open") && !popup.contains(e.target) && !stage.contains(e.target)) closePopup();
+    });
+
+    // Theme toggle honoring OS preference is already handled by CSS; nothing else needed.
+  })();
+  </script>
 </body>
 </html>
