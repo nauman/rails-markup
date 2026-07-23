@@ -320,6 +320,20 @@ module RailsMarkup
       assert_empty annotation.reload.thread
     end
 
+    test "transitions are idempotent — re-applying the same status does not raise" do
+      annotation = annotations(:pending_fix)
+
+      annotation.resolve!
+      assert_nothing_raised { annotation.resolve!(summary: "again") }
+      assert_equal "resolved", annotation.reload.status
+      assert_equal 0, annotation.thread.size, "a no-op re-resolve must not append a thread entry"
+
+      ack = annotations(:other_page_pending)
+      ack.acknowledge!
+      assert_nothing_raised { ack.acknowledge! }
+      assert_equal "acknowledged", ack.reload.status
+    end
+
     # --- Thread management ---
 
     test "add_reply! appends entry to thread" do

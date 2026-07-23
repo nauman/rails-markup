@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.2] - 2026-07-23
+
+### Fixed
+
+- Status transitions (`acknowledge!` / `resolve!` / `dismiss!`) are now idempotent — re-applying the same status (double-click, MCP re-run) is a no-op instead of raising and returning HTTP 500.
+
 ## [1.2.1] - 2026-07-21
 
 ### Fixed

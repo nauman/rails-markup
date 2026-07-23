@@ -107,12 +107,14 @@ module RailsMarkup
     end
 
     def acknowledge!
+      return self if status == "acknowledged" # idempotent — re-acknowledging is a no-op
       raise "Cannot acknowledge a #{status} annotation" unless status == "pending"
 
       update!(status: "acknowledged")
     end
 
     def resolve!(summary: nil)
+      return self if status == "resolved" # idempotent — re-resolving is a no-op
       raise "Cannot resolve a #{status} annotation" unless status.in?(%w[pending acknowledged])
 
       transaction do
@@ -122,6 +124,7 @@ module RailsMarkup
     end
 
     def dismiss!(reason: nil)
+      return self if status == "dismissed" # idempotent — re-dismissing is a no-op
       raise "Cannot dismiss a #{status} annotation" unless status.in?(%w[pending acknowledged])
 
       transaction do
