@@ -1,37 +1,31 @@
-<div class="rm-filters">
+<div class="rm-filters rm-status-tabs" role="group" aria-label="Filter by status">
   <%
     statuses = [
-      ["all", "All"],
-      ["pending", "Pending"],
-      ["acknowledged", "Acknowledged"],
-      ["resolved", "Resolved"],
-      ["dismissed", "Dismissed"]
+      ["all", "All", @total_count],
+      ["pending", "Pending", @pending_count],
+      ["acknowledged", "Acknowledged", @acknowledged_count],
+      ["resolved", "Resolved", @resolved_count],
+      ["dismissed", "Dismissed", @dismissed_count]
     ]
   %>
-  <% statuses.each do |value, label| %>
+  <% statuses.each do |value, label, count| %>
     <a href="<%= rails_markup.root_path(status: value, page_url: @current_page_url, q: @current_query, author: @current_author) %>"
-       class="rm-pill <%= 'rm-pill-active' if @current_status == value %>">
-      <%= label %>
+       class="rm-pill <%= 'rm-pill-active' if @current_status == value %>" <%= 'aria-current=page' if @current_status == value %>>
+      <%= label %> <span class="rm-tab-count"><%= count %></span>
     </a>
   <% end %>
 
-  <% if @current_status.in?(%w[pending acknowledged]) && @annotations.any? %>
-    <%= form_tag(rails_markup.dismiss_all_path(status: @current_status), method: :post, style: "display:inline", data: { turbo_confirm: "Dismiss all #{@current_status} annotations?" }) do %>
-      <button type="submit" class="rm-pill" style="color: #ef4444; border-color: #fecaca;">Dismiss all <%= @current_status %></button>
-    <% end %>
-  <% end %>
-
-  <div style="margin-left: auto; display: flex; gap: 4px; align-items: center;">
+  <div class="rm-filter-tools" role="group" aria-label="View">
     <a href="<%= rails_markup.root_path(status: @current_status, page_url: @current_page_url, q: @current_query, author: @current_author) %>"
        class="rm-pill <%= 'rm-pill-active' unless action_name == 'board' %>">List</a>
     <a href="<%= rails_markup.board_path %>" class="rm-pill <%= 'rm-pill-active' if action_name == 'board' %>">Board</a>
   </div>
 </div>
 
-<div class="rm-filters">
+<div class="rm-filters rm-filter-row">
   <%# Search %>
-  <form action="<%= rails_markup.root_path %>" method="get" style="display:flex;gap:6px;align-items:center;">
-    <input type="text" name="q" value="<%= @current_query %>" placeholder="Search annotations..." class="rm-select" style="min-width:180px;">
+  <form action="<%= rails_markup.root_path %>" method="get" class="rm-search-form" role="search">
+    <input type="search" name="q" value="<%= @current_query %>" placeholder="Search annotations..." aria-label="Search annotations" class="rm-select">
     <input type="hidden" name="status" value="<%= @current_status %>">
     <input type="hidden" name="page_url" value="<%= @current_page_url %>">
     <input type="hidden" name="author" value="<%= @current_author %>">
@@ -41,9 +35,13 @@
     <% end %>
   </form>
 
+  <details class="rm-options" <%= 'open' if @current_page_url.present? || @current_author.present? %>>
+    <summary>Options<%= ' · filtered' if @current_page_url.present? || @current_author.present? %></summary>
+    <div class="rm-options-content">
+      <div class="rm-options-heading">Filter feedback</div>
   <%# Page URL filter %>
   <% if @page_urls.any? %>
-    <select class="rm-select" onchange="document.getElementById('annotations-content').src=this.value">
+    <select id="rm-page-filter" class="rm-select" aria-label="Filter by page" onchange="window.location=this.value">
       <option value="<%= rails_markup.root_path(status: @current_status == 'all' ? nil : @current_status, q: @current_query, author: @current_author) %>">All pages</option>
       <% @page_urls.each do |url| %>
         <option value="<%= rails_markup.root_path(status: @current_status == 'all' ? nil : @current_status, page_url: url, q: @current_query, author: @current_author) %>"
@@ -56,7 +54,7 @@
 
   <%# Author filter %>
   <% if @authors.any? %>
-    <select class="rm-select" onchange="window.location=this.value">
+    <select class="rm-select" aria-label="Filter by author" onchange="window.location=this.value">
       <option value="<%= rails_markup.root_path(status: @current_status, page_url: @current_page_url, q: @current_query) %>">All authors</option>
       <% @authors.each do |author| %>
         <option value="<%= rails_markup.root_path(status: @current_status, page_url: @current_page_url, q: @current_query, author: author) %>"
@@ -67,9 +65,20 @@
     </select>
   <% end %>
 
+  <div class="rm-options-heading">Export</div>
   <%# Export %>
-  <div style="margin-left:auto;display:flex;gap:4px;">
+  <div class="rm-filter-tools" role="group" aria-label="Export annotations">
     <a href="<%= rails_markup.export_csv_path(status: @current_status, page_url: @current_page_url, q: @current_query, author: @current_author) %>" class="rm-pill">CSV</a>
     <a href="<%= rails_markup.export_json_path(status: @current_status, page_url: @current_page_url, q: @current_query, author: @current_author) %>" class="rm-pill">JSON</a>
   </div>
+      <div class="rm-options-heading">Toolbar</div>
+      <%= render "toolbar_preferences" %>
+  <% if @current_status.in?(%w[pending acknowledged]) && @annotations.any? %>
+    <%= form_tag(rails_markup.dismiss_all_path(status: @current_status), method: :post, style: "display:inline", data: { turbo_confirm: "Dismiss all #{@current_status} annotations?" }) do %>
+      <button type="submit" class="rm-pill" style="color: #ef4444; border-color: #fecaca;">Dismiss all <%= @current_status %></button>
+    <% end %>
+  <% end %>
+
+    </div>
+  </details>
 </div>

@@ -47,8 +47,12 @@
       <% elsif @current_author.present? %>
         No annotations by <%= @current_author %>.
         <a href="<%= rails_markup.root_path(status: @current_status, page_url: @current_page_url) %>">Clear filter</a>
+      <% elsif @total_count == 0 %>
+        <h3 class="rm-empty-title">Your next improvement starts on the page.</h3>
+        <p class="rm-empty-help">Open a page in your app, expand the markup toolbar, and select an element to leave feedback. Your annotations will appear here.</p>
       <% elsif @current_status != "all" %>
         No <%= @current_status %> annotations.
+        <p class="rm-empty-help"><a href="<%= rails_markup.root_path(status: 'all', page_url: @current_page_url) %>">View all feedback</a> or use the toolbar in your app to add a new annotation.</p>
       <% else %>
         No annotations yet.<br>Use the toolbar to start annotating.
       <% end %>

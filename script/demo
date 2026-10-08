@@ -1,0 +1,47 @@
+# frozen_string_literal: true
+
+# Run the repository's host app with a persistent, separate demo database.
+ENV["RAILS_ENV"] = "test"
+
+require "fileutils"
+require_relative "../test/dummy/config/environment"
+require "puma"
+
+demo_directory = File.expand_path("../tmp/demo", __dir__)
+FileUtils.mkdir_p(demo_directory)
+ActiveRecord::Base.establish_connection(
+  adapter: "sqlite3",
+  database: File.join(demo_directory, "annotations.sqlite3")
+)
+unless ActiveRecord::Base.connection.table_exists?("rails_markup_annotations")
+  ActiveRecord::Schema.verbose = false
+  load File.expand_path("../test/dummy/db/schema.rb", __dir__)
+end
+
+# Exercise real CSRF protection, even though the fixture app uses test settings.
+ActionController::Base.allow_forgery_protection = true
+RailsMarkup.config.return_url = "/host"
+class RailsMarkupDemoController < ActionController::Base
+  def show
+    source = File.read(Rails.root.join("../../examples/control-surface.html"))
+    source = source.sub("</head>", "#{view_context.csrf_meta_tags}</head>")
+    # Keep the original Kuickr experiment intact; only add the gem's overlay.
+    source = source.sub("</body>", "#{render_to_string(partial: 'rails_markup/shared/toolbar')}</body>")
+    render html: source.html_safe, layout: false
+  end
+end
+Rails.application.routes.prepend do
+  get "/demo", to: "rails_markup_demo#show"
+end
+# Refresh views between design edits without restarting this demo process.
+ActionView::Base.cache_template_loading = false
+port = Integer(ENV.fetch("PORT", "4317"))
+server = Puma::Server.new(Rails.application)
+server.add_tcp_listener("127.0.0.1", port)
+$stdout.sync = true
+puts "Demo login: http://127.0.0.1:#{port}/rails_markup_test_session/new"
+puts "Host page:  http://127.0.0.1:#{port}/host"
+puts "Kuickr demo: http://127.0.0.1:#{port}/demo"
+puts "Dashboard:  http://127.0.0.1:#{port}/feedback"
+puts "Demo annotations persist in #{demo_directory}. Press Ctrl-C to stop."
+server.run.join

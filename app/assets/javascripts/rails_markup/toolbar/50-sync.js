@@ -112,8 +112,8 @@
       this._updateCount();
       const panel = document.getElementById("rm-panel");
       if (panel) panel.style.display = "flex";
-      const fab = document.getElementById("rm-fab");
-      if (fab) fab.setAttribute("aria-expanded", "true");
+      this._expandDock();
+      document.getElementById("rm-panel-toggle")?.setAttribute("aria-expanded", "true");
       return false;
     },
     _localStateSnapshot() {

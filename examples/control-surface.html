@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EXP·002 — Control Surface</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0A0D13; --panel:#10151E; --line:rgba(120,165,205,.10); --frame:rgba(120,165,205,.20);
+  --ink:#E8EDF2; --soft:#9DB0C2; --muted:#6B7A8D; --faint:#4A5666;
+  --acc:#34E5C4; --amber:#F5A524; --mag:#F25C9C;
+  --disp:'Space Grotesk',sans-serif; --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);font-family:var(--mono);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden;cursor:none;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:34px 34px}
+a{color:inherit;text-decoration:none}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.scan{position:fixed;inset:0;z-index:60;pointer-events:none;background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.16) 3px 4px);opacity:.5}
+.sweep{position:fixed;left:0;right:0;height:120px;z-index:61;pointer-events:none;background:linear-gradient(180deg,transparent,rgba(52,229,196,.05),transparent);animation:sweep 7s linear infinite}
+@keyframes sweep{from{top:-120px}to{top:100%}}
+.ch{position:fixed;z-index:70;pointer-events:none;background:var(--acc);opacity:0;transition:opacity .2s}
+.chx{left:0;right:0;height:1px}.chy{top:0;bottom:0;width:1px}
+.coord{position:fixed;z-index:71;pointer-events:none;font-size:10px;letter-spacing:.08em;color:var(--bg);background:var(--acc);padding:2px 6px;opacity:0;transform:translate(12px,12px)}
+@media (pointer:coarse){body{cursor:auto}.ch,.coord{display:none}}
+
+.nav{position:fixed;top:0;left:0;right:0;z-index:50;display:flex;justify-content:space-between;align-items:center;padding:16px 28px;border-bottom:1px solid var(--frame);background:color-mix(in srgb,var(--bg) 80%,transparent);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);font-size:11px;letter-spacing:.16em;text-transform:uppercase}
+.nav .b{color:var(--acc);font-weight:500}
+.nav .r{display:flex;gap:20px;color:var(--muted)}
+.nav .r a:hover{color:var(--ink)}
+.nav .on i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--acc);margin-right:7px;animation:bl 1.4s steps(1) infinite;vertical-align:1px}
+@keyframes bl{50%{opacity:.2}}
+
+.hero{position:relative;min-height:100svh;display:flex;flex-direction:column;justify-content:center;padding:0 8vw}
+.hero .frame{position:absolute;inset:28px;pointer-events:none;border:1px solid var(--frame)}
+.tick{position:absolute;width:12px;height:12px;border:1px solid var(--acc);z-index:2}
+.t1{top:23px;left:23px;border-right:0;border-bottom:0}.t2{top:23px;right:23px;border-left:0;border-bottom:0}
+.t3{bottom:23px;left:23px;border-right:0;border-top:0}.t4{bottom:23px;right:23px;border-left:0;border-top:0}
+.eyebrow{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:26px}
+.disp{font-family:var(--disp);font-weight:700;font-size:clamp(58px,13vw,150px);line-height:.9;letter-spacing:-.01em;text-transform:uppercase;margin:0}
+.disp .l2{color:var(--acc)}
+.boot{margin-top:26px;font-size:14px;color:var(--soft)}
+.boot .c{display:inline-block;width:8px;height:16px;background:var(--acc);margin-left:3px;vertical-align:-3px;animation:bl 1s steps(1) infinite}
+.scrollcue{position:absolute;bottom:46px;left:8vw;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint)}
+
+.wrap{max-width:1100px;margin:0 auto;padding:0 8vw}
+section{padding:120px 0}
+.shead{font-family:var(--disp);font-weight:700;font-size:clamp(28px,5vw,52px);text-transform:uppercase;letter-spacing:-.01em;line-height:1;display:flex;align-items:baseline;gap:16px}
+.shead .ix{font-family:var(--mono);font-size:13px;font-weight:400;color:var(--acc);letter-spacing:.1em}
+.ssub{font-size:12px;letter-spacing:.04em;color:var(--muted);margin:14px 0 44px}
+
+.spec{border:1px solid var(--frame)}
+.spec .row{display:grid;grid-template-columns:200px 1fr;border-top:1px solid var(--frame)}
+.spec .row:first-child{border-top:0}
+.spec .k{padding:16px 22px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);border-right:1px solid var(--frame)}
+.spec .v{padding:16px 22px;font-size:14px;color:var(--ink)}
+.spec .v b{color:var(--acc);font-weight:500}
+.spec .sw{display:inline-block;width:12px;height:12px;vertical-align:-1px;margin-right:8px;border:1px solid var(--frame)}
+@media (max-width:620px){.spec .row{grid-template-columns:120px 1fr}}
+
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--frame)}
+.tile{position:relative;padding:30px 26px;min-height:200px;border-right:1px solid var(--frame);border-bottom:1px solid var(--frame);display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;transition:background .2s}
+.tile:nth-child(3n){border-right:0}
+.tile:nth-last-child(-n+3){border-bottom:0}
+.tile:hover{background:var(--panel)}
+.tile .ix{font-size:11px;letter-spacing:.14em;color:var(--faint)}
+.tile h3{font-family:var(--disp);font-weight:500;font-size:20px;text-transform:uppercase;margin:10px 0 6px;letter-spacing:.01em}
+.tile p{font-size:12px;color:var(--muted);line-height:1.5}
+.tile:hover h3{color:var(--acc)}
+.tile.glx h3{animation:glitch .35s steps(2) 3}
+@keyframes glitch{0%{text-shadow:2px 0 var(--mag),-2px 0 var(--acc);transform:translateX(0)}25%{transform:translateX(-2px)}50%{text-shadow:-2px 0 var(--mag),2px 0 var(--acc);transform:translateX(2px)}100%{text-shadow:none;transform:none}}
+.mini{position:absolute;top:26px;right:26px;width:30px;height:30px;border:1px solid var(--frame)}
+.mini.cross::before,.mini.cross::after{content:"";position:absolute;background:var(--acc)}
+.mini.cross::before{left:50%;top:4px;bottom:4px;width:1px;transform:translateX(-.5px)}
+.mini.cross::after{top:50%;left:4px;right:4px;height:1px;transform:translateY(-.5px)}
+.mini.grd{background-image:linear-gradient(var(--frame) 1px,transparent 1px),linear-gradient(90deg,var(--frame) 1px,transparent 1px);background-size:7px 7px;border-color:var(--acc)}
+.mini.scn{background:repeating-linear-gradient(0deg,transparent 0 2px,var(--acc) 2px 3px);opacity:.6}
+
+.callout{border-left:2px solid var(--acc);background:var(--panel);padding:20px 24px;margin-top:44px;font-size:13px;color:var(--soft)}
+.callout b{color:var(--acc)}
+
+footer{border-top:1px solid var(--frame);padding:34px 8vw;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<h1 class="sr-only">EXP·002 Control Surface — a dark blueprint brutalist design experiment with crosshair cursor, decoding type, and glitch specimens</h1>
+<div class="scan"></div><div class="sweep"></div>
+<div class="ch chx" id="chx"></div><div class="ch chy" id="chy"></div><div class="coord" id="coord">x:000 y:000</div>
+
+<nav class="nav">
+  <span class="b">EXP·002 // blueprint</span>
+  <span class="r"><a href="https://kuickr.co/nauman/experiments/exp-001-kinetic-warm.html">← 001 kinetic·warm</a><a href="https://kuickr.co/nauman/experiments/exp-003-overprint.html">003 →</a><span class="on"><i></i>online</span></span>
+</nav>
+
+<header class="hero">
+  <div class="frame"></div>
+  <span class="tick t1"></span><span class="tick t2"></span><span class="tick t3"></span><span class="tick t4"></span>
+  <p class="eyebrow">EXP·002 · blueprint protocol · rev 1</p>
+  <h2 class="disp"><span class="l1" data-final="CONTROL">CONTROL</span><br><span class="l2" data-final="SURFACE">SURFACE</span></h2>
+  <div class="boot">&gt; <span id="bootline"></span><span class="c"></span></div>
+  <div class="scrollcue">scroll ↓</div>
+</header>
+
+<main class="wrap">
+  <section>
+    <div class="shead"><span class="ix">[00]</span>SPEC SHEET</div>
+    <p class="ssub">the system, declared · everything brutalist runs on a stated grid</p>
+    <div class="spec">
+      <div class="row"><div class="k">Palette</div><div class="v"><span class="sw" style="background:#0A0D13"></span>#0A0D13 ink · <b>#34E5C4 signal</b> · #F25C9C alert</div></div>
+      <div class="row"><div class="k">Type</div><div class="v">Space Grotesk 700 / <b>JetBrains Mono</b> 400–500</div></div>
+      <div class="row"><div class="k">Grid</div><div class="v">34px hairline lattice · always visible</div></div>
+      <div class="row"><div class="k">Cursor</div><div class="v"><b>crosshair</b> + live x/y readout</div></div>
+      <div class="row"><div class="k">Motion</div><div class="v">scramble-decode · RGB glitch · scanline sweep</div></div>
+      <div class="row"><div class="k">Status</div><div class="v"><b>🟢 nominal</b> · contrast AA · reduced-motion safe</div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="shead"><span class="ix">[01]</span>SPECIMENS</div>
+    <p class="ssub">six modules · hover a tile to trigger its glitch</p>
+    <div class="grid" id="grid">
+      <div class="tile"><div><span class="ix">MOD·01</span><h3>Crosshair</h3><p>Pointer becomes a full-bleed targeting reticle with quantised coordinates.</p></div><span class="mini cross"></span></div>
+      <div class="tile"><div><span class="ix">MOD·02</span><h3>Decode</h3><p>Headlines resolve from random glyph noise into the locked string on load &amp; hover.</p></div><span class="mini grd"></span></div>
+      <div class="tile"><div><span class="ix">MOD·03</span><h3>Glitch</h3><p>RGB channel split on the cyan/magenta axis — three frames, then clean.</p></div><span class="mini scn"></span></div>
+      <div class="tile"><div><span class="ix">MOD·04</span><h3>Lattice</h3><p>The 34px grid is structure, not decoration. Everything snaps to it.</p></div><span class="mini grd"></span></div>
+      <div class="tile"><div><span class="ix">MOD·05</span><h3>Scanline</h3><p>A faint CRT sweep travels the viewport — the page reads as a live signal.</p></div><span class="mini scn"></span></div>
+      <div class="tile"><div><span class="ix">MOD·06</span><h3>Registration</h3><p>Corner ticks and an inset frame border the canvas like a technical drawing.</p></div><span class="mini cross"></span></div>
+    </div>
+    <div class="callout"><b>Counterpoint to 001.</b> Where Kinetic Warm whispers — serif, paper, soft repel — Control Surface declares: mono, grid, hard edges, signal cyan. Same engine (cursor physics, self-running motion), opposite voice.</div>
+  </section>
+</main>
+
+<footer>
+  <span>nauman/experiments/exp-002-control-surface.html</span>
+  <span>EXP·002 · Kuickr by Pavelabs</span>
+</footer>
+
+<script>
+(function(){
+  var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var glyphs='ABCDEFGHJKLMNPQRSTUVWXYZ0123456789#%&/<>*+=';
+  function scramble(el,delay){
+    var fin=el.getAttribute('data-final'), n=fin.length, start=performance.now()+delay, dur=140*n;
+    function step(now){
+      var e=now-start; if(e<0){requestAnimationFrame(step);return;}
+      var done=Math.floor(e/140), out='';
+      for(var i=0;i<n;i++){ if(i<done){out+=fin[i];} else if(fin[i]===' '){out+=' ';} else {out+=glyphs[Math.floor(Math.random()*glyphs.length)];} }
+      el.textContent=out;
+      if(e<dur) requestAnimationFrame(step); else el.textContent=fin;
+    }
+    requestAnimationFrame(step);
+  }
+  var l1=document.querySelector('.l1'), l2=document.querySelector('.l2');
+  if(reduce){l1.textContent=l1.getAttribute('data-final');l2.textContent=l2.getAttribute('data-final');}
+  else{scramble(l1,150);scramble(l2,480);}
+  var disp=document.querySelector('.disp');
+  disp.addEventListener('pointerenter',function(){if(!reduce){scramble(l1,0);scramble(l2,160);}});
+
+  var boot=document.getElementById('bootline'), msg='rendering specimen grid ... OK  ·  awaiting input', bi=0;
+  (function type(){ if(bi<=msg.length){boot.textContent=msg.slice(0,bi);bi++;setTimeout(type,bi<msg.length?38:99999);} })();
+
+  var chx=document.getElementById('chx'),chy=document.getElementById('chy'),coord=document.getElementById('coord');
+  addEventListener('pointermove',function(e){
+    var x=e.clientX,y=e.clientY;
+    chx.style.opacity=.55;chy.style.opacity=.55;coord.style.opacity=1;
+    chx.style.transform='translateY('+y+'px)';chy.style.transform='translateX('+x+'px)';
+    coord.style.left=x+'px';coord.style.top=y+'px';
+    coord.textContent='x:'+String(Math.round(x)).padStart(3,'0')+' y:'+String(Math.round(y)).padStart(3,'0');
+  },{passive:true});
+  addEventListener('pointerleave',function(){chx.style.opacity=0;chy.style.opacity=0;coord.style.opacity=0;});
+
+  document.querySelectorAll('.tile').forEach(function(el){
+    el.addEventListener('pointerenter',function(){if(reduce)return;el.classList.remove('glx');void el.offsetWidth;el.classList.add('glx');});
+  });
+})();
+</script>
+<script type="image/svg+xml" id="kuickr-hero"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="EXP 002 Control Surface: dark blueprint grid, glitching headline, crosshair cursor and scanline sweep">
+<defs>
+<pattern id="grid" width="34" height="34" patternUnits="userSpaceOnUse"><path d="M34 0H0V34" fill="none" stroke="#78A5CD" stroke-opacity=".13"/></pattern>
+<pattern id="scan" width="4" height="4" patternUnits="userSpaceOnUse"><rect y="3" width="4" height="1" fill="#000" opacity=".28"/></pattern>
+<linearGradient id="sw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34E5C4" stop-opacity="0"/><stop offset=".5" stop-color="#34E5C4" stop-opacity=".14"/><stop offset="1" stop-color="#34E5C4" stop-opacity="0"/></linearGradient>
+</defs>
+<style>
+text{font-family:'Helvetica Neue',Arial,sans-serif;font-weight:700;font-size:84px}
+.m{fill:#F25C9C;animation:gm 3.2s steps(1) infinite}
+.c{fill:#7df3ff;animation:gc 3.2s steps(1) infinite}
+.t{animation:gt 3.2s steps(1) infinite}
+.sweep{animation:sweep 5s linear infinite}
+.cx{animation:cx 7s ease-in-out infinite alternate}
+.cy{animation:cy 4.6s ease-in-out infinite alternate}
+.bl{animation:bl 1s steps(1) infinite}
+@keyframes gm{0%,58%,70%,100%{transform:none}60%{transform:translate(7px,0)}64%{transform:translate(-6px,2px)}67%{transform:translate(4px,-1px)}}
+@keyframes gc{0%,58%,70%,100%{transform:none}60%{transform:translate(-7px,0)}64%{transform:translate(6px,-2px)}67%{transform:translate(-4px,1px)}}
+@keyframes gt{0%,58%,70%,100%{transform:none}62%{transform:translate(-3px,0)}66%{transform:translate(3px,0)}}
+@keyframes sweep{from{transform:translateY(-120px)}to{transform:translateY(380px)}}
+@keyframes cx{from{transform:translateX(-360px)}to{transform:translateX(90px)}}
+@keyframes cy{from{transform:translateY(-170px)}to{transform:translateY(50px)}}
+@keyframes bl{50%{opacity:.15}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+<rect width="640" height="360" fill="#0A0D13"/>
+<rect width="640" height="360" fill="url(#grid)"/>
+<rect x="20" y="20" width="600" height="320" fill="none" stroke="#78A5CD" stroke-opacity=".25"/>
+<path d="M15 27V15h12M613 15h12v12M625 333v12h-12M27 345H15v-12" fill="none" stroke="#34E5C4" stroke-width="1.5"/>
+<text x="52" y="78" style="font:500 12px ui-monospace,Menlo,monospace;letter-spacing:3px" fill="#6B7A8D">EXP·002 · BLUEPRINT PROTOCOL</text>
+<circle class="bl" cx="582" cy="74" r="4" fill="#34E5C4"/>
+<g><text class="m" x="48" y="172">CONTROL</text><text class="c" x="48" y="172">CONTROL</text><text class="t" x="48" y="172" fill="#E8EDF2">CONTROL</text></g>
+<g><text class="m" x="48" y="252" style="animation-delay:-.5s">SURFACE</text><text class="c" x="48" y="252" style="animation-delay:-.5s">SURFACE</text><text class="t" x="48" y="252" fill="#34E5C4" style="animation-delay:-.5s">SURFACE</text></g>
+<path d="M52 292l8 6-8 6" fill="none" stroke="#9DB0C2" stroke-width="2"/><rect x="70" y="294" width="150" height="8" fill="#9DB0C2" opacity=".5"/><rect x="228" y="294" width="34" height="8" fill="#34E5C4" opacity=".8"/><rect class="bl" x="270" y="290" width="8" height="16" fill="#34E5C4"/>
+<rect class="sweep" width="640" height="120" fill="url(#sw)"/>
+<g class="cx"><line x1="500" y1="0" x2="500" y2="360" stroke="#34E5C4" opacity=".6"/>
+<g class="cy"><rect x="512" y="282" width="78" height="16" fill="#34E5C4"/><path d="M518 290h22m6 0h8m10 0h20" stroke="#0A0D13" stroke-width="3" stroke-dasharray="5 2"/><circle cx="500" cy="270" r="9" fill="none" stroke="#34E5C4" stroke-width="1.5"/></g></g>
+<g class="cy"><line x1="0" y1="270" x2="640" y2="270" stroke="#34E5C4" opacity=".6"/></g>
+<rect width="640" height="360" fill="url(#scan)"/>
+</svg></script>
+</body>
+</html>

@@ -1,9 +1,19 @@
   Object.assign(RailsMarkupToolbar, {
     _bindEvents() {
       const self = this;
-      document.getElementById("rm-fab").addEventListener("click", () => self.toggleMode());
+      document.getElementById("rm-attach-screen").addEventListener("click", () => self._attachScreen());
+      document.getElementById("rm-attach-file").addEventListener("click", () => document.getElementById("rm-screenshot-file").click());
+      document.getElementById("rm-screenshot-file").addEventListener("change", e => self._attachScreenshotFile(e.target.files[0]));
+      document.getElementById("rm-remove-screenshot").addEventListener("click", () => self._removeScreenshot());
+      document.getElementById("rm-popup-input").addEventListener("paste", e => {
+        if (!self.enableScreenshots) return;
+        const file = Array.from(e.clipboardData?.items || []).find(item => item.type.startsWith("image/"))?.getAsFile();
+        if (file) { e.preventDefault(); self._attachScreenshotFile(file); }
+      });
+      document.getElementById("rm-fab").addEventListener("click", () => self.dockState === "collapsed" ? self._expandDock() : self.toggleMode());
+      document.getElementById("rm-dock-close").addEventListener("click", () => self.active ? self._deactivateMode() : self._collapseDock());
       document.getElementById("rm-panel-toggle").addEventListener("click", () => self.togglePanel());
-      document.getElementById("rm-panel-close").addEventListener("click", () => self.togglePanel());
+      document.getElementById("rm-panel-close").addEventListener("click", () => self._settingsPanelOpen ? self._toggleSettings() : self.togglePanel());
       document.getElementById("rm-settings-toggle").addEventListener("click", () => self._toggleSettings());
       document.getElementById("rm-btn-cancel").addEventListener("click", () => self._closePopup());
       document.getElementById("rm-btn-submit").addEventListener("click", (e) => self.submitAnnotation(e));
@@ -136,6 +146,8 @@
       const panel = document.getElementById("rm-panel");
       if (panel) panel.style.display = "none";
 
+      document.getElementById("rm-panel-toggle")?.setAttribute("aria-expanded", "false");
+
       // Rerender pins for current page (annotations are global, pins are page-specific)
       this._renderPins();
       this._updateCount();
@@ -161,11 +173,9 @@
     },
     _activateMode() {
       document.body.style.cursor = "crosshair";
-      const fab = document.getElementById("rm-fab");
-      const iconSize = this._fabIconSize();
-      fab.style.transform = "scale(0.9)";
-      fab.style.boxShadow = `0 0 0 3px ${this._accentBg()}, 0 0 0 6px rgba(99,102,241,0.2)`;
-      fab.innerHTML = `<svg viewBox="0 0 24 24" style="width:${iconSize}px;height:${iconSize}px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M6 18L18 6M6 6l12 12"/></svg>`;
+      this.active = true;
+      this.dockState = "annotating";
+      this._renderDockState();
       document.addEventListener("mousemove", this._boundMouseMove, true);
       document.addEventListener("mousedown", this._boundMouseDown, true);
       document.addEventListener("mouseup", this._boundMouseUp, true);
@@ -176,14 +186,8 @@
     _deactivateMode() {
       this.active = false;
       document.body.style.cursor = "";
-      const fab = document.getElementById("rm-fab");
-      if (fab) {
-        const iconSize = this._fabIconSize();
-        fab.style.transform = "";
-        fab.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
-        fab.innerHTML = `<svg viewBox="0 0 24 24" style="width:${iconSize}px;height:${iconSize}px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>`;
-        this._updateCount();
-      }
+      if (this.dockState === "annotating") this.dockState = "expanded";
+      this._renderDockState();
       document.removeEventListener("mousemove", this._boundMouseMove, true);
       document.removeEventListener("mousedown", this._boundMouseDown, true);
       document.removeEventListener("mouseup", this._boundMouseUp, true);
@@ -192,16 +196,53 @@
       document.removeEventListener("touchend", this._boundTouchEnd, true);
       this._removeHighlight();
     },
-    togglePanel() {
-      const panel = document.getElementById("rm-panel");
+    _renderDockState() {
+      const dock = document.getElementById("rm-dock");
+      if (!dock) return;
+      dock.style.display = this.fabVisible ? "flex" : "none";
+      const expanded = this.dockState !== "collapsed";
+      dock.dataset.state = this.dockState;
+      document.getElementById("rm-dock-controls").hidden = !expanded;
       const fab = document.getElementById("rm-fab");
-      if (panel.style.display === "flex") {
-        panel.style.display = "none";
-        if (fab) fab.setAttribute("aria-expanded", "false");
-      } else {
-        panel.style.display = "flex";
-        if (fab) fab.setAttribute("aria-expanded", "true");
-      }
+      const label = !expanded ? "Expand markup tools" : this.active ? "Stop annotating" : "Annotate an element";
+      fab.title = label;
+      fab.setAttribute("aria-label", label);
+      fab.setAttribute("aria-expanded", String(expanded));
+      fab.setAttribute("aria-pressed", String(this.active));
+      const close = document.getElementById("rm-dock-close");
+      close.hidden = !this.fabVisible && !this.active;
+      close.style.display = close.hidden ? "none" : "flex";
+      close.title = this.active ? "Stop annotating" : "Collapse markup tools";
+      close.setAttribute("aria-label", close.title);
+    },
+    _expandDock() {
+      if (!this.active) this.dockState = "expanded";
+      this._renderDockState();
+    },
+    _collapseDock() {
+      this._deactivateMode();
+      this._closePopup();
+      this._closeAllMenus();
+      document.getElementById("rm-panel").style.display = "none";
+      document.getElementById("rm-panel-toggle").setAttribute("aria-expanded", "false");
+      document.getElementById("rm-settings-panel").hidden = true;
+      document.getElementById("rm-settings-toggle").setAttribute("aria-expanded", "false");
+      this._settingsPanelOpen = false;
+      this.dockState = this.fabVisible ? "collapsed" : "expanded";
+      this._renderDockState();
+      if (this.fabVisible) document.getElementById("rm-fab").focus();
+    },
+    togglePanel() {
+      this._expandDock();
+      const panel = document.getElementById("rm-panel");
+      const opening = panel.style.display !== "flex" || panel.dataset.view === "settings";
+      panel.dataset.view = "feedback";
+      panel.querySelector("h3").textContent = "Feedback";
+      document.getElementById("rm-settings-panel").hidden = true;
+      document.getElementById("rm-settings-toggle").setAttribute("aria-expanded", "false");
+      this._settingsPanelOpen = false;
+      panel.style.display = opening ? "flex" : "none";
+      document.getElementById("rm-panel-toggle").setAttribute("aria-expanded", String(opening));
     },
     _handleMouseMove(event) {
       if (!this.active) return;
@@ -235,9 +276,7 @@
       this.selectedText = (sel && sel.toString().trim().length > 0) ? sel.toString().trim() : null;
       this._currentElement = this._identify(el);
       this._currentScreenshot = null;
-      if (this.enableScreenshots) {
-        this._currentScreenshot = await this._captureElement(el);
-      }
+
       this._showPopup(event.clientX, event.clientY);
       this.clickedElement = null;
     },
@@ -314,6 +353,12 @@
           event.stopPropagation();
           return;
         }
+      }
+      if (event.key === "Escape" && this.dockState === "expanded") {
+        this._collapseDock();
+        event.preventDefault();
+        event.stopPropagation();
+        return;
       }
       if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
         const popup = document.getElementById("rm-popup");

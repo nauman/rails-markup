@@ -12,6 +12,8 @@
       this.drawingMode = null;
       this._screenshotImg = null;
 
+      document.getElementById("rm-image-options").open = Boolean(this._currentScreenshot);
+      this._resetScreenshotStatus();
       popup.style.display = "block";
       popup.style.opacity = "0";
       popup.style.left = "-9999px";
@@ -70,7 +72,7 @@
       const len = document.getElementById("rm-popup-input").value.length;
       const el = document.getElementById("rm-char-count");
       el.textContent = len > 0 ? len : "";
-      el.style.color = len > 500 ? "#f87171" : "#d1d5db";
+      el.style.color = len > 500 ? "#b91c1c" : "#596579";
     },
     submitAnnotation(event) {
       if (event) event.preventDefault();
@@ -155,7 +157,7 @@
         } else {
           chip.className = "rm-chip rm-chip-inactive";
           chip.style.background = "#f9fafb";
-          chip.style.color = "#9ca3af";
+          chip.style.color = "#596579";
         }
       });
     },
@@ -199,10 +201,10 @@
               options: this._statusOptions(),
               compact: true
             })}
-            <button data-edit-id="${annotation.id}" title="Edit" style="padding:2px 4px;background:none;border:none;cursor:pointer;color:#d1d5db;border-radius:4px;display:flex;align-items:center;" onmouseover="this.style.color='#6b7280'" onmouseout="this.style.color='#d1d5db'">
+            <button data-edit-id="${annotation.id}" title="Edit" style="padding:2px 4px;background:none;border:none;cursor:pointer;color:#64748b;border-radius:4px;display:flex;align-items:center;" onmouseover="this.style.color='#6b7280'" onmouseout="this.style.color='#64748b'">
               <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M17 3a2.85 2.85 0 114 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
             </button>
-            <button data-delete-id="${annotation.id}" title="Delete" style="padding:2px 4px;background:none;border:none;cursor:pointer;color:#d1d5db;border-radius:4px;display:flex;align-items:center;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#d1d5db'">
+            <button data-delete-id="${annotation.id}" title="Delete" style="padding:2px 4px;background:none;border:none;cursor:pointer;color:#64748b;border-radius:4px;display:flex;align-items:center;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#64748b'">
               <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
           </span>
@@ -346,13 +348,21 @@
       const pin = document.createElement("div");
       pin.className = "rm-pin" + (isResolved ? "" : " rm-pin-active");
       pin.dataset.pinId = annotation.id;
-      pin.style.top = (top - 10) + "px";
-      pin.style.left = (left + width - 10) + "px";
+      this._positionPin(pin, { top, left, width });
       pin.style.background = isResolved ? "#d1d5db" : this._accentBg();
       if (isResolved) pin.style.opacity = "0.6";
       pin.textContent = annotation.id;
       pin.title = "#" + annotation.id + ": " + annotation.comment.slice(0, 50);
       container.appendChild(pin);
+    },
+    _positionPin(pin, { top, left, width }) {
+      const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+      const scrollLeft = window.scrollX || 0;
+      // The 20px pin must fit inside the viewport, including its focus/hover space.
+      const minLeft = scrollLeft + 4;
+      const maxLeft = Math.max(minLeft, scrollLeft + viewportWidth - 24);
+      pin.style.left = Math.max(minLeft, Math.min(left + width - 10, maxLeft)) + "px";
+      pin.style.top = Math.max(4, top - 10) + "px";
     },
     _renderPins() {
       const container = document.getElementById("rm-pins-container");
@@ -377,7 +387,7 @@
         const rect = el.getBoundingClientRect();
         annotation.element.boundingBox = { top: Math.round(rect.top + window.scrollY), left: Math.round(rect.left + window.scrollX), width: Math.round(rect.width), height: Math.round(rect.height) };
         const pin = document.querySelector('[data-pin-id="' + annotation.id + '"]');
-        if (pin) { pin.style.top = (annotation.element.boundingBox.top - 10) + "px"; pin.style.left = (annotation.element.boundingBox.left + annotation.element.boundingBox.width - 10) + "px"; }
+        if (pin) this._positionPin(pin, annotation.element.boundingBox);
       });
     },
     _debouncedRepositionPins(delay = 250) {
@@ -466,8 +476,8 @@
       case "accent": return "Accent";
       case "position": return "Position";
       case "size": return "Size";
-      case "fabVisible": return "Show FAB";
-      case "enableScreenshots": return "Screenshots";
+      case "fabVisible": return "Show floating toolbar";
+      case "enableScreenshots": return "Image attachments";
       default: return setting;
       }
     },
@@ -496,17 +506,19 @@
     _toolbarSettingsRowMarkup(setting) {
       const current = this._toolbarSettingCurrentValue(setting);
       const options = this._toolbarSettingOptions(setting);
-      const buttons = options.map(([value, label]) => {
+      const label = this._toolbarSettingLabel(setting);
+      if (typeof current === "boolean") {
+        return `<div class="rm-settings-group rm-settings-switch-row"><span class="rm-settings-label">${this._esc(label)}</span><button type="button" class="rm-setting-switch" role="switch" aria-label="${this._esc(label)}" aria-checked="${current}" data-setting="${setting}" data-value="${!current}"><span></span></button></div>`;
+      }
+      const colors = { indigo: "#4f46e5", amber: "#f59e0b", blue: "#2563eb", emerald: "#059669", rose: "#e11d48" };
+      const corners = { bl: "◱", br: "◲", tl: "◰", tr: "◳" };
+      const buttons = options.map(([value, optionLabel]) => {
         const active = String(value) === String(current);
-        const valueAttr = this._toolbarSettingDisplayValue(value);
-        return `<button type="button" class="rm-chip${active ? " rm-chip-active" : " rm-chip-inactive"} rm-setting-chip" data-setting="${setting}" data-value="${this._esc(valueAttr)}"${active ? ` style="background:${this._accentBg()}"` : ""}>${this._esc(label)}</button>`;
+        const swatch = setting === "accent";
+        const content = swatch ? (active ? "✓" : "") : setting === "position" ? corners[value] : this._esc(optionLabel);
+        return `<button type="button" class="rm-setting-choice${swatch ? " rm-color-swatch" : ""}${setting === "position" ? " rm-corner-choice" : ""}" data-setting="${setting}" data-value="${this._esc(this._toolbarSettingDisplayValue(value))}" aria-label="${this._esc(optionLabel)}" title="${this._esc(optionLabel)}" aria-pressed="${active}"${swatch ? ` style="background:${colors[value]}"` : ""}>${content}</button>`;
       }).join("");
-      return `
-        <div class="rm-settings-group">
-          <div class="rm-settings-label">${this._esc(this._toolbarSettingLabel(setting))}</div>
-          <div class="rm-settings-options">${buttons}</div>
-        </div>
-      `;
+      return `<div class="rm-settings-group"><div class="rm-settings-label">${this._esc(label)}</div><div class="rm-settings-options" role="group" aria-label="${this._esc(label)}">${buttons}</div></div>`;
     },
     _toolbarSettingValue(setting, rawValue) {
       if (setting === "fabVisible" || setting === "enableScreenshots") {
@@ -520,66 +532,107 @@
       const normalized = this._normalizeToolbarSettings(next);
       if (JSON.stringify(normalized) === JSON.stringify(this.toolbarSettings)) return;
       if (!this._saveToolbarSettings(normalized)) return;
+      const settingsOpen = this._settingsPanelOpen;
       this.toolbarSettings = normalized;
       this.destroy();
       this.init(this._bootstrapOptions || {});
+      if (settingsOpen && this.fabVisible) {
+        this._toggleSettings();
+        this.root.querySelector(`[data-setting="${setting}"][aria-pressed="true"], [data-setting="${setting}"][role="switch"]`)?.focus();
+      }
     },
     _toggleSettings() {
       const panel = document.getElementById("rm-settings-panel");
       const toggle = document.getElementById("rm-settings-toggle");
       if (!panel) return;
-      panel.hidden = !panel.hidden;
-      this._settingsPanelOpen = !panel.hidden;
-      if (toggle) toggle.setAttribute("aria-expanded", String(!panel.hidden));
+      this._expandDock();
+      const feedback = document.getElementById("rm-panel");
+      const opening = panel.hidden || feedback.style.display !== "flex";
+      feedback.style.display = opening ? "flex" : "none";
+      feedback.dataset.view = opening ? "settings" : "feedback";
+      feedback.querySelector("h3").textContent = opening ? "Toolbar settings" : "Feedback";
+      panel.hidden = !opening;
+      this._settingsPanelOpen = opening;
+      document.getElementById("rm-panel-toggle").setAttribute("aria-expanded", "false");
+      if (toggle) toggle.setAttribute("aria-expanded", String(opening));
     },
-    async _captureElement(element) {
+    _resetScreenshotStatus(message = "Optional · capture, upload, or paste an image") {
+      document.getElementById("rm-screenshot-status").textContent = message;
+      document.getElementById("rm-remove-screenshot").hidden = !this._currentScreenshot;
+    },
+    _removeScreenshot() {
+      this._currentScreenshot = null;
+      this.root.querySelector(".rm-drawing-container")?.remove();
+      const tool = this.root.querySelector("[data-draw]");
+      tool?.parentElement.remove();
+      this.drawingCanvas = null;
+      this.drawingCtx = null;
+      this.drawingHistory = [];
+      this._screenshotImg = null;
+      document.getElementById("rm-screenshot-file").value = "";
+      this._resetScreenshotStatus();
+    },
+    _useScreenshot(dataUrl) {
+      if (document.getElementById("rm-popup").style.display !== "block") return;
+      this._removeScreenshot();
+      this._currentScreenshot = dataUrl;
+      document.getElementById("rm-image-options").open = true;
+      this._initDrawing(dataUrl);
+      this._resetScreenshotStatus("Image attached · review before submitting");
+    },
+    async _attachScreenshotFile(file) {
+      if (!file) return;
+      if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 5 * 1024 * 1024) {
+        this._resetScreenshotStatus("Choose a PNG, JPEG, or WebP under 5 MB.");
+        return;
+      }
+      const popup = document.getElementById("rm-popup");
+      const reader = new FileReader();
+      reader.onload = () => { if (popup === document.getElementById("rm-popup")) this._useScreenshot(reader.result); };
+      reader.onerror = () => this._resetScreenshotStatus("Could not read this image. Try another file.");
+      reader.readAsDataURL(file);
+    },
+    async _attachScreen() {
+      if (!navigator.mediaDevices?.getDisplayMedia) {
+        this._resetScreenshotStatus("Tab capture is unavailable here. Upload or paste an image instead.");
+        return;
+      }
+      let stream;
+      let video;
+      let frameTimeout;
+      const popup = document.getElementById("rm-popup");
+      const button = document.getElementById("rm-attach-screen");
+      button.disabled = true;
+      this._resetScreenshotStatus("Choose a tab or window in the browser prompt. You can also upload an image.");
       try {
-        const rect = element.getBoundingClientRect();
-        const width = Math.min(Math.round(rect.width), 800);
-        const height = Math.min(Math.round(rect.height), 600);
-        if (width < 10 || height < 10) return null;
-
-        const clone = element.cloneNode(true);
-        // Strip scripts and event handlers
-        clone.querySelectorAll("script").forEach(s => s.remove());
-        // Remove cross-origin images to avoid tainting the canvas
-        const origin = location.origin;
-        clone.querySelectorAll("img").forEach(img => {
-          try { if (img.src && !img.src.startsWith(origin) && !img.src.startsWith("data:")) img.removeAttribute("src"); } catch {}
-        });
-
-        const svgNS = "http://www.w3.org/2000/svg";
-        const svg = `<svg xmlns="${svgNS}" width="${width}" height="${height}">
-          <foreignObject width="100%" height="100%">
-            <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;">${clone.outerHTML}</div>
-          </foreignObject>
-        </svg>`;
-
+        // Must run directly from the user's click to retain browser activation.
+        stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false, preferCurrentTab: true });
+        video = document.createElement("video");
+        video.srcObject = stream;
+        video.muted = true;
+        await Promise.race([
+          video.play(),
+          new Promise((_, reject) => { frameTimeout = setTimeout(() => reject(new Error("Capture timed out")), 8000); })
+        ]);
+        if (popup !== document.getElementById("rm-popup") || popup.style.display !== "block") return;
+        this._removeHighlight();
+        this.root.style.visibility = "hidden";
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const scale = Math.min(1, 1600 / Math.max(video.videoWidth, video.videoHeight));
         const canvas = document.createElement("canvas");
-        const scale = Math.min(window.devicePixelRatio || 1, 2);
-        canvas.width = width * scale;
-        canvas.height = height * scale;
-        const ctx = canvas.getContext("2d");
-        ctx.scale(scale, scale);
-
-        const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-
-        return new Promise((resolve) => {
-          const img = new Image();
-          img.onload = () => {
-            ctx.drawImage(img, 0, 0, width, height);
-            URL.revokeObjectURL(url);
-            try { resolve(canvas.toDataURL("image/png", 0.7)); } catch { resolve(null); }
-          };
-          img.onerror = () => {
-            URL.revokeObjectURL(url);
-            resolve(null);
-          };
-          img.src = url;
-        });
-      } catch {
-        return null;
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        if (!canvas.width || !canvas.height) throw new Error("No video frame");
+        canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+        this._useScreenshot(canvas.toDataURL("image/png"));
+      } catch (error) {
+        this._resetScreenshotStatus(error.name === "NotAllowedError" ? "Capture cancelled. You can upload or paste an image." : "Could not capture this tab. Upload or paste an image instead.");
+      } finally {
+        clearTimeout(frameTimeout);
+        stream?.getTracks().forEach(track => track.stop());
+        if (video) video.srcObject = null;
+        this.root.style.visibility = "";
+        button.disabled = false;
       }
     },
     _initDrawing(screenshotDataUrl) {
@@ -593,7 +646,7 @@
 
       const img = new Image();
       img.src = screenshotDataUrl;
-      img.style.cssText = "display:block;max-width:100%;border-radius:8px;";
+      img.style.cssText = "display:block;width:100%;height:auto;border-radius:8px;";
       container.appendChild(img);
 
       const canvas = document.createElement("canvas");
@@ -602,6 +655,7 @@
 
       // Tool buttons
       const tools = document.createElement("div");
+      tools.className = "rm-drawing-tools";
       tools.style.cssText = "display:flex;gap:4px;padding:6px 0;";
       tools.innerHTML = `
         <button type="button" data-draw="arrow" class="rm-pill" style="font-size:11px;padding:4px 10px;">Arrow</button>
@@ -614,6 +668,11 @@
       popup.insertBefore(tools, textarea);
       popup.insertBefore(container, tools);
 
+      this._resetScreenshotStatus("Image attached · review before submitting");
+      img.onerror = () => {
+        this._removeScreenshot();
+        this._resetScreenshotStatus("Could not open this image. Try another file.");
+      };
       img.onload = () => {
         canvas.width = img.naturalWidth || img.offsetWidth;
         canvas.height = img.naturalHeight || img.offsetHeight;

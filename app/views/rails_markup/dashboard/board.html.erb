@@ -1,64 +1,49 @@
 <% content_for(:title) { "Board" } %>
-<% content_for(:page_title) { "Annotations Board" } %>
-
 <%= render "styles" %>
 
-<%# View toggle %>
-<div class="rm-filters">
-  <a href="<%= rails_markup.root_path %>" class="rm-pill">List</a>
-  <a href="<%= rails_markup.board_path %>" class="rm-pill rm-pill-active">Board</a>
+<div class="rm-filters rm-board-toolbar">
+  <div class="rm-filter-tools" role="group" aria-label="View">
+    <a href="<%= rails_markup.root_path(status: 'all') %>" class="rm-pill">List</a>
+    <a href="<%= rails_markup.board_path %>" class="rm-pill rm-pill-active" aria-current="page">Board</a>
+    <details class="rm-options rm-board-help"><summary aria-label="About the board"><span aria-hidden="true">ⓘ</span></summary><div class="rm-options-content">Open a card to review. Drag or use Move to change its status.</div></details>
+  </div>
+  <details class="rm-options"><summary>Options</summary><div class="rm-options-content">
+    <div class="rm-options-heading">Toolbar</div>
+    <%= render "toolbar_preferences" %>
+  </div></details>
 </div>
 
-<div class="rm-board">
-  <% column_config = {
-    pending:      { label: "Pending",      color: "#f59e0b", bg: "#fffbeb", border: "#fde68a" },
-    acknowledged: { label: "Acknowledged", color: "#3b82f6", bg: "#eff6ff", border: "#bfdbfe" },
-    resolved:     { label: "Resolved",     color: "#10b981", bg: "#ecfdf5", border: "#a7f3d0" },
-    dismissed:    { label: "Dismissed",    color: "#9ca3af", bg: "#f9fafb", border: "#e5e7eb" }
-  } %>
-
-  <% column_config.each do |status, config| %>
-    <div class="rm-board-column" data-status="<%= status %>"
-         style="border-top: 3px solid <%= config[:color] %>;">
-      <div class="rm-board-column-header" style="background: <%= config[:bg] %>; color: <%= config[:color] %>;">
-        <span><%= config[:label] %></span>
-        <span style="font-size:12px;font-weight:400;"><%= @columns[status].size %></span>
-      </div>
-      <div class="rm-board-cards">
-        <% @columns[status].each do |annotation| %>
-          <div class="rm-board-card" draggable="true" data-annotation-id="<%= annotation.id %>">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-              <span class="rm-badge rm-intent-<%= annotation.intent %>" style="font-size:10px;"><%= annotation.intent %></span>
-              <% if annotation.severity != "suggestion" %>
-                <span class="rm-badge rm-severity-<%= annotation.severity %>" style="font-size:10px;"><%= annotation.severity %></span>
-              <% end %>
-              <% if annotation.author_name.present? %>
-                <span style="font-size:10px;color:#9ca3af;margin-left:auto;"><%= annotation.author_name %></span>
-              <% end %>
-            </div>
-            <div style="font-size:13px;line-height:1.5;color:#374151;"><%= truncate(annotation.content, length: 120) %></div>
-            <div style="margin-top:6px;font-size:10px;color:#d1d5db;">
-              <code style="font-size:10px;"><%= truncate(annotation.page_url, length: 30) %></code>
-              &middot;
-              <span title="<%= annotation.created_at.strftime("%B %d, %Y at %H:%M") %>"><%= time_ago_in_words(annotation.created_at) %></span>
-            </div>
-            <%# Touch fallback for drag-and-drop: pick a status directly %>
-            <select class="rm-board-move" data-annotation-id="<%= annotation.id %>"
-                    aria-label="Move annotation to status"
-                    style="margin-top:8px;width:100%;font-size:11px;padding:4px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;color:#6b7280;">
-              <% %w[pending acknowledged resolved dismissed].each do |s| %>
-                <option value="<%= s %>" <%= "selected" if annotation.status == s %>><%= s.capitalize %></option>
-              <% end %>
-            </select>
+<div class="rm-layout rm-board-layout">
+  <div class="rm-main">
+    <div class="rm-board">
+      <% {pending: "Pending", acknowledged: "Acknowledged", resolved: "Resolved", dismissed: "Dismissed"}.each do |status, label| %>
+        <section class="rm-board-column" data-status="<%= status %>" aria-label="<%= label %> feedback">
+          <div class="rm-board-column-header">
+            <span><span class="rm-dot rm-dot-<%= status %>"></span><%= label %></span>
+            <span class="rm-tab-count"><%= @columns[status].size %></span>
           </div>
-        <% end %>
-        <% if @columns[status].empty? %>
-          <div style="text-align:center;padding:24px 8px;color:#d1d5db;font-size:12px;">No items</div>
-        <% end %>
-      </div>
+          <div class="rm-board-cards">
+            <% @columns[status].each do |annotation| %>
+              <div class="rm-board-card" draggable="true" data-annotation-id="<%= annotation.id %>">
+                <%= render "annotation_card", annotation: annotation, board: true %>
+                <details class="rm-board-card-actions"><summary>Move</summary>
+                  <select class="rm-board-move rm-select" data-annotation-id="<%= annotation.id %>" aria-label="Move annotation to status">
+                    <% %w[pending acknowledged resolved dismissed].each do |value| %>
+                      <option value="<%= value %>" <%= "selected" if annotation.status == value %>><%= value.capitalize %></option>
+                    <% end %>
+                  </select>
+                </details>
+              </div>
+            <% end %>
+            <div class="rm-board-empty" <%= 'hidden' if @columns[status].any? %>>No feedback</div>
+          </div>
+        </section>
+      <% end %>
     </div>
-  <% end %>
+  </div>
+  <%= render "feedback_modal" %>
 </div>
+
 
 <script>
 (function() {
@@ -98,7 +83,7 @@
   });
 
   function moveCard(id, newStatus) {
-    const card = document.querySelector('[data-annotation-id="' + id + '"]');
+    const card = document.querySelector('.rm-board-card[data-annotation-id="' + id + '"]');
     if (!card || card.closest('[data-status]').dataset.status === newStatus) return;
 
     // Optimistically move the card to the target column, then reconcile.
@@ -127,8 +112,10 @@
   function updateColumnCounts() {
     document.querySelectorAll('.rm-board-column').forEach(col => {
       const count = col.querySelectorAll('.rm-board-card').length;
-      const countEl = col.querySelector('.rm-board-column-header span:last-child');
+      const countEl = col.querySelector('.rm-board-column-header > .rm-tab-count');
       if (countEl) countEl.textContent = count;
+      const empty = col.querySelector('.rm-board-empty');
+      if (empty) empty.hidden = count > 0;
     });
   }
 })();

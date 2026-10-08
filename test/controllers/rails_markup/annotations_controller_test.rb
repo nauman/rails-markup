@@ -20,7 +20,7 @@ module RailsMarkup
 
       get health_path, as: :json
 
-      assert_redirected_to "/rails_markup_test_session"
+      assert_redirected_to "/rails_markup_test_session/new"
     end
 
     test "unauthenticated mutation is rejected" do
@@ -30,7 +30,7 @@ module RailsMarkup
         post session_annotations_path("test-session"), params: { content: "Blocked" }, as: :json
       end
 
-      assert_redirected_to "/rails_markup_test_session"
+      assert_redirected_to "/rails_markup_test_session/new"
     end
 
     test "authenticated mutation without csrf is rejected" do
@@ -57,7 +57,7 @@ module RailsMarkup
 
       get "/feedback/api/annotations", params: { page_url: "/private" }, as: :json
 
-      assert_redirected_to "/rails_markup_test_session"
+      assert_redirected_to "/rails_markup_test_session/new"
     end
 
     test "pull returns only the exact page in deterministic recent order" do

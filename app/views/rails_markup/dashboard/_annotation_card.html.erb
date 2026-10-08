@@ -2,16 +2,11 @@
   <a href="<%= rails_markup.annotation_path(annotation) %>"
      data-turbo-frame="detail-panel"
      class="rm-card-link">
-    <div class="rm-card-header">
-      <span class="rm-dot rm-dot-<%= annotation.status %>"></span>
-      <span class="rm-badge rm-status-<%= annotation.status %>"><%= annotation.status %></span>
-      <span class="rm-badge rm-intent-<%= annotation.intent %>"><%= annotation.intent %></span>
-      <% if annotation.severity != "suggestion" %>
-        <span class="rm-badge rm-severity-<%= annotation.severity %>"><%= annotation.severity %></span>
-      <% end %>
-    </div>
     <div class="rm-card-content"><%= truncate(annotation.content, length: 200) %></div>
     <div class="rm-card-meta">
+      <% unless local_assigns[:board] %><span class="rm-row-status"><span class="rm-dot rm-dot-<%= annotation.status %>"></span><%= annotation.status.capitalize %></span><% end %>
+      <% if annotation.intent != "change" %><span class="rm-badge rm-intent-<%= annotation.intent %>"><%= annotation.intent %></span><% end %>
+      <% if annotation.severity != "suggestion" %><span class="rm-badge rm-severity-<%= annotation.severity %>"><%= annotation.severity %></span><% end %>
       <code><%= truncate(annotation.page_url, length: 50) %></code>
       <% if annotation.author_name.present? %>
         <span class="rm-author"><%= annotation.author_name %></span>
@@ -20,6 +15,7 @@
       <% if annotation.thread.any? %>
         <span><%= annotation.thread.size %> replies</span>
       <% end %>
+      <span class="rm-card-number">#<%= annotation.id %></span>
     </div>
   </a>
 </div>

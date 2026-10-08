@@ -1,0 +1,32 @@
+<div class="rm-toolbar-preferences">
+  <span id="rm-launcher-save-status" role="status">Visible on the app · this browser</span>
+  <button type="button" class="rm-toolbar-visibility" id="rm-launcher-visibility" role="switch" aria-label="Show floating toolbar" aria-checked="<%= RailsMarkup.config.fab_visible %>"><span>Floating toolbar</span><span class="rm-toolbar-visibility-track" aria-hidden="true"></span></button>
+</div>
+<script>
+(() => {
+  const button = document.getElementById("rm-launcher-visibility");
+  const status = document.getElementById("rm-launcher-save-status");
+  const endpoint = <%= raw((rails_markup.root_path.sub(%r{/+$}, "") + "/api").to_json) %>;
+  const key = `rm-toolbar-settings:${encodeURIComponent(endpoint)}`;
+  const defaultVisible = <%= RailsMarkup.config.fab_visible ? "true" : "false" %>;
+  const read = () => {
+    const value = JSON.parse(localStorage.getItem(key) || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  };
+  const render = settings => {
+    const visible = typeof settings.fabVisible === "boolean" ? settings.fabVisible : defaultVisible;
+    button.setAttribute("aria-checked", String(visible));
+    status.textContent = `${visible ? "Visible" : "Hidden"} on the app · this browser`;
+  };
+  try { render(read()); } catch (_) { status.textContent = "Browser preferences unavailable"; }
+  button.addEventListener("click", () => {
+    try {
+      const settings = read();
+      settings.fabVisible = button.getAttribute("aria-checked") !== "true";
+      localStorage.setItem(key, JSON.stringify(settings));
+      render(settings);
+
+    } catch (_) { status.textContent = "Could not save preference"; }
+  });
+})();
+</script>

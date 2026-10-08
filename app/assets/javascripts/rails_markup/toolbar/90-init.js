@@ -44,11 +44,24 @@
         this._boundOnline = () => this._onOnline();
         window.addEventListener("online", this._boundOnline);
       }
+      if (!this._boundSettingsStorage) {
+        this._boundSettingsStorage = event => {
+          if (event.key !== this._toolbarSettingsKey()) return;
+          const options = this._bootstrapOptions;
+          this.destroy();
+          this.init(options);
+        };
+        window.addEventListener("storage", this._boundSettingsStorage);
+      }
       this._renderPins();
       this._updateCount();
       if (previousPageUrl && previousPageUrl !== this._currentPageUrl && this.serverOnline) this._initSession();
     },
     destroy() {
+      if (this._boundSettingsStorage) {
+        window.removeEventListener("storage", this._boundSettingsStorage);
+        this._boundSettingsStorage = null;
+      }
       this._closeAllMenus();
       this._deactivateMode();
       if (this.sseSource) { this.sseSource.close(); this.sseSource = null; }

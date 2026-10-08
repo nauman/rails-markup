@@ -33,10 +33,9 @@ module RailsMarkup
     # Default: true
     attr_accessor :toolbar_enabled
 
-    # Show the floating action button (FAB) specifically.
-    # When false, the FAB is hidden but the toolbar system stays active — pins
-    # still render and the panel is reachable via its toggle. Use when the host
-    # provides its own trigger or wants read-only pins. Requires toolbar_enabled.
+    # Show the floating toolbar (FAB and its expanded controls).
+    # When false, the whole dock is hidden; pins and synchronization stay active.
+    # Browser preferences can restore it from the engine dashboard. Requires toolbar_enabled.
     # Default: true
     attr_accessor :fab_visible
 

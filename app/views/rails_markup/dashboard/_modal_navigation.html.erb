@@ -1,0 +1,81 @@
+<script>
+(() => {
+  const layout = document.querySelector('.rm-layout');
+  const dialog = layout.querySelector('.rm-feedback-modal');
+  const panel = dialog.querySelector('#detail-panel');
+  let opener;
+  let request;
+  let changed = false;
+
+  function renderDetail(html) {
+    const document = new DOMParser().parseFromString(html, 'text/html');
+    const detail = document.querySelector('turbo-frame#detail-panel');
+    if (!detail) throw new Error('Feedback unavailable');
+    panel.innerHTML = detail.innerHTML;
+  }
+
+  layout.addEventListener('click', async event => {
+    const link = event.target.closest("a[data-turbo-frame='detail-panel']");
+    if (!link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    event.preventDefault();
+    request?.abort();
+    request = new AbortController();
+    const current = request;
+    try {
+      const response = await fetch(link.href, {signal: current.signal});
+      if (!response.ok) throw new Error('Could not load feedback');
+      const html = await response.text();
+      if (current.signal.aborted) return;
+      renderDetail(html);
+      opener = link;
+      link.closest('.rm-card').classList.add('rm-card-active');
+      dialog.showModal();
+      panel.querySelector('.rm-back')?.focus();
+    } catch (error) {
+      if (error.name !== 'AbortError') window.location.href = link.href;
+    }
+  });
+
+  dialog.addEventListener('click', event => {
+    if (event.target !== dialog) return;
+    const rect = dialog.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
+  });
+
+  dialog.addEventListener('close', () => {
+    request?.abort();
+    panel.innerHTML = '';
+    document.querySelectorAll('.rm-card-active').forEach(card => card.classList.remove('rm-card-active'));
+    opener?.focus({preventScroll: true});
+    // Refresh the current view and its filters after a saved change.
+    if (changed) window.location.reload();
+  });
+
+  dialog.addEventListener('submit', async event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const form = event.target;
+    const button = event.submitter;
+    if (button?.disabled) return;
+    if (button) button.disabled = true;
+    request?.abort();
+    request = new AbortController();
+    const current = request;
+    try {
+      const response = await fetch(form.action, {method: form.method, body: new FormData(form), signal: current.signal});
+      if (!response.ok) throw new Error('Could not save feedback');
+      const html = await response.text();
+      if (current.signal.aborted || !dialog.open) return;
+      changed = true;
+      renderDetail(html);
+      panel.querySelector('.rm-back')?.focus();
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      let alert = panel.querySelector('[role="alert"]');
+      if (!alert) { alert = document.createElement('p'); alert.setAttribute('role', 'alert'); form.prepend(alert); }
+      alert.textContent = 'Could not save. Please try again.';
+      if (button) button.disabled = false;
+    }
+  });
+})();
+</script>

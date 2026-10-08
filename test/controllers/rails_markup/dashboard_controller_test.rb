@@ -13,7 +13,21 @@ module RailsMarkup
 
       get rails_markup.root_path
 
-      assert_redirected_to "/rails_markup_test_session"
+      assert_redirected_to "/rails_markup_test_session/new"
+      follow_redirect!
+      assert_response :success
+      assert_select 'form[action="/rails_markup_test_session"][method="post"]'
+      post "/rails_markup_test_session"
+      assert_redirected_to "/feedback"
+      follow_redirect!
+      assert_response :success
+    end
+
+    test "old demo login URL redirects to the login form" do
+      get "/rails_markup_test_session"
+      assert_redirected_to "/rails_markup_test_session/new"
+      follow_redirect!
+      assert_response :success
     end
 
     # --- Index ---
@@ -40,7 +54,7 @@ module RailsMarkup
 
     test "index defaults to pending status" do
       get rails_markup.root_path
-      assert_select ".rm-pill-active", text: "Pending"
+      assert_select ".rm-pill-active", text: /Pending\s+\d+/
     end
 
     test "index renders turbo frames" do

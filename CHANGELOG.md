@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0] - 2026-10-08
+
+### Added
+
+- List and board cards share a focused feedback modal. Review context, images and replies, acknowledge or resolve feedback without leaving the current view, and close with Escape or a backdrop click. Saved changes refresh the current filters and board columns.
+- Optional image attachments support browser tab/window capture, PNG/JPEG/WebP upload and pasted images, with a preview, drawing tools and removal before submission. Capture stops its media tracks after taking one frame; unavailable or cancelled capture offers upload and paste instead.
+- Dashboard Options can show or hide the entire floating toolbar for the current browser. Preferences stay in sync across open tabs.
+- A local Kuickr example and editable, captioned video walkthrough are available under `examples/`, using `script/demo` and a separate persistent demo database. These development assets are excluded from the gem package.
+
+### Changed
+
+- Compact dashboard rows, counted status tabs and contextual disclosures replace the large dashboard summary. Filters, exports and toolbar preferences live under Options; board help and move controls expand on demand.
+- Toolbar settings use accent swatches, corner controls and compact switches. Changing a setting keeps the settings view open and retains keyboard focus.
+- Added Sydney, nauman.one and Pavelabs credits to the default dashboard and README.
+
+### Fixed
+
+- The selected accent now colors the whole floating toolbar, including hover and annotation states.
+- Hiding the floating toolbar removes all its controls while keeping annotations and synchronization available.
+- Annotation pins stay inside the viewport on initial render and resize.
+- Board cards open their feedback, status moves update counts and empty states, and the help popover stays inside the page.
+- Standalone dashboard filtering works without Turbo, and the local demo's legacy login URL redirects to its login form.
+
+No database migration is required. Image capture uses the browser's screen-sharing permission flow rather than automatic DOM-to-image rendering.
+
 ## [1.4.7] - 2026-08-30
 
 ### Fixed

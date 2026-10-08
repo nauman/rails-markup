@@ -3,36 +3,18 @@
 
 <%= render "styles" %>
 
+<div class="rm-workspace-heading">
+  <h2>Feedback <span class="rm-heading-count"><%= @total_count %></span></h2>
+  <p><%= @pending_count %> pending<% if @acknowledged_count.positive? %> · <%= @acknowledged_count %> in progress<% end %></p>
+</div>
 
 <div class="rm-layout">
   <div class="rm-main">
     <turbo-frame id="annotations-content">
-      <%= render "stats" %>
       <%= render "filters" %>
       <%= render "annotation_list" %>
     </turbo-frame>
   </div>
 
-  <turbo-frame id="detail-panel" class="rm-panel rm-panel-empty">
-  </turbo-frame>
+  <%= render "feedback_modal" %>
 </div>
-
-<script>
-  document.addEventListener("turbo:frame-load", (e) => {
-    if (e.target.id !== "detail-panel") return;
-    // Show panel (hidden when empty)
-    e.target.classList.remove("rm-panel-empty");
-    // Highlight active card
-    document.querySelectorAll(".rm-card-active").forEach(c => c.classList.remove("rm-card-active"));
-    const src = e.target.getAttribute("src") || "";
-    const match = src.match(/annotations\/(\d+)/);
-    if (match) {
-      const card = document.querySelector(`[data-annotation-id="${match[1]}"]`);
-      if (card) card.classList.add("rm-card-active");
-    }
-    // Scroll to panel on mobile
-    if (window.innerWidth <= 900) {
-      e.target.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  });
-</script>

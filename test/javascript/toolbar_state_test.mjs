@@ -94,11 +94,11 @@ test("stored toolbar settings override init-time defaults", (t) => {
   assert.equal(harness.toolbar.fabVisible, false);
   assert.equal(harness.toolbar.enableScreenshots, false);
   assert.equal(harness.window.document.getElementById("rm-fab").style.display, "none");
-  assert.equal(harness.window.document.getElementById("rm-fab").style.right, "24px");
-  assert.equal(harness.window.document.getElementById("rm-fab").style.top, "24px");
+  assert.equal(harness.window.document.getElementById("rm-dock").style.right, "24px");
+  assert.equal(harness.window.document.getElementById("rm-dock").style.top, "24px");
 });
 
-test("toolbar renders an always-visible settings toggle and a smaller default FAB", (t) => {
+test("toolbar starts compact with settings inside the collapsed dock", (t) => {
   const harness = createToolbarHarness();
   t.after(() => harness.reset());
 
@@ -116,8 +116,8 @@ test("toolbar renders an always-visible settings toggle and a smaller default FA
   assert.equal(settingsToggle.getAttribute("aria-controls"), "rm-settings-panel");
   assert.equal(harness.window.document.getElementById("rm-fab").style.width, "40px");
   assert.equal(harness.window.document.getElementById("rm-fab").style.height, "40px");
-  assert.equal(settingsToggle.style.left, "72px");
-  assert.equal(settingsToggle.style.bottom, "24px");
+  assert.equal(harness.window.document.getElementById("rm-dock-controls").hidden, true);
+  assert.equal(harness.window.document.getElementById("rm-dock").style.bottom, "24px");
 });
 
 test("toolbar setting changes persist and reinitialize the runtime config", (t) => {

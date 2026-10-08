@@ -14,9 +14,9 @@ class ToolbarSyncSystemTest < ApplicationSystemTestCase
     assert page.evaluate_script("Boolean(window.Turbo)"), "the host must load real Turbo before the toolbar"
 
     find("#rm-fab").click
-    # Wait for annotation mode to be active (the panel opens) before clicking the
-    # target — otherwise the click can race mode activation on a cold start.
-    assert_selector "#rm-panel", visible: :visible
+    assert_selector '#rm-dock[data-state="expanded"]'
+    find("#rm-fab").click
+    assert_selector '#rm-dock[data-state="annotating"]'
     find(".host-para").click
     assert_selector "#rm-popup", visible: :visible
 
@@ -24,6 +24,8 @@ class ToolbarSyncSystemTest < ApplicationSystemTestCase
     click_button "Add"
 
     assert_annotation_saved("Increase the spacing")
+    find("#rm-panel-toggle").click
+    assert_selector "#rm-panel", visible: :visible
     annotation = RailsMarkup::Annotation.find_by!(content: "Increase the spacing")
     assert_equal "/host", annotation.page_url
 

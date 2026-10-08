@@ -5,20 +5,21 @@
 <turbo-frame id="detail-panel">
 <div class="rm-detail">
   <%# Close button %>
-  <button type="button" class="rm-back" onclick="var f=this.closest('turbo-frame'); if (this.closest('.rm-layout')) { f.innerHTML=''; f.classList.add('rm-panel-empty'); document.querySelectorAll('.rm-card-active').forEach(c => c.classList.remove('rm-card-active')); } else { window.location.href='<%= j(rails_markup.root_path) %>'; }">&#10005; Close</button>
+  <button type="button" class="rm-back" onclick="var dialog=this.closest('dialog'); if(dialog) { dialog.close(); return; } window.location.href='<%= j(rails_markup.root_path) %>';">&#10005; Close</button>
 
   <%# Header badges %>
   <div class="rm-detail-header">
     <span class="rm-dot rm-dot-<%= @annotation.status %>"></span>
     <span class="rm-badge rm-status-<%= @annotation.status %>"><%= @annotation.status %></span>
     <span class="rm-badge rm-intent-<%= @annotation.intent %>"><%= @annotation.intent %></span>
-    <span class="rm-badge rm-severity-<%= @annotation.severity %>"><%= @annotation.severity %></span>
+    <% if @annotation.severity != "suggestion" %><span class="rm-badge rm-severity-<%= @annotation.severity %>"><%= @annotation.severity %></span><% end %>
   </div>
 
   <%# Content %>
   <div class="rm-detail-content"><%= @annotation.content %></div>
 
   <%# Metadata %>
+  <details class="rm-context"><summary>Context & details</summary>
   <dl class="rm-detail-meta">
     <dt>Page</dt>
     <dd><code><%= @annotation.page_url %></code></dd>
@@ -51,11 +52,11 @@
       <dd><span title="<%= @annotation.updated_at.strftime("%B %d, %Y at %H:%M:%S") %>"><%= time_ago_in_words(@annotation.updated_at) %> ago</span></dd>
     <% end %>
 
-    <% if @annotation.metadata&.dig("screenshot").present? %>
-      <dt>Screenshot</dt>
-      <dd><img src="<%= @annotation.metadata["screenshot"] %>" style="max-width:100%;border:1px solid #e5e7eb;border-radius:8px;" alt="Element screenshot"></dd>
-    <% end %>
   </dl>
+  </details>
+  <% if @annotation.metadata&.dig("screenshot").present? %>
+    <img src="<%= @annotation.metadata["screenshot"] %>" class="rm-attachment" alt="Element screenshot">
+  <% end %>
 
   <%# Actions (only for non-terminal states) %>
   <% if @annotation.status.in?(%w[pending acknowledged]) %>
@@ -67,7 +68,7 @@
       <% end %>
 
       <button type="button" class="rm-btn rm-btn-success" onclick="document.getElementById('resolve-form-<%= @annotation.id %>').style.display='block'">Resolve</button>
-      <button type="button" class="rm-btn rm-btn-danger" onclick="document.getElementById('dismiss-form-<%= @annotation.id %>').style.display='block'">Dismiss</button>
+      <button type="button" class="rm-btn" onclick="document.getElementById('dismiss-form-<%= @annotation.id %>').style.display='block'">Dismiss</button>
     </div>
 
     <%# Resolve form %>
@@ -110,8 +111,8 @@
   <% end %>
 
   <%# Reply form %>
+  <details class="rm-context"><summary>Reply to this feedback</summary>
   <div class="rm-thread" style="<%= @annotation.thread.empty? ? 'margin-top: 24px; border-top: 1px solid #e5e7eb; padding-top: 20px;' : '' %>">
-    <h3>Add reply</h3>
     <%= form_tag(rails_markup.annotation_path(@annotation, action_type: "reply"), method: :patch) do %>
       <div class="rm-form-group">
         <textarea name="message" class="rm-input" rows="2" placeholder="Type a reply..." required></textarea>
@@ -125,5 +126,6 @@
       <button type="submit" class="rm-btn rm-btn-primary">Reply</button>
     <% end %>
   </div>
+  </details>
 </div>
 </turbo-frame>

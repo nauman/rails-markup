@@ -6,6 +6,6 @@ class RailsMarkupTestAuthController < ActionController::Base
   private
 
   def require_rails_markup_admin
-    redirect_to "/rails_markup_test_session" unless session[:rails_markup_admin]
+    redirect_to main_app.new_rails_markup_test_session_path unless session[:rails_markup_admin]
   end
 end

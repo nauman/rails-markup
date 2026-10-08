@@ -5,6 +5,9 @@ Rails.application.routes.draw do
     only: %i[new create],
     controller: "rails_markup_test_sessions"
 
+  # Recover old login URLs without treating a GET as session creation.
+  get "/rails_markup_test_session", to: redirect("/rails_markup_test_session/new")
+
   get "/rails_markup_test_assets/turbo.js",
     to: "rails_markup_test_assets#turbo",
     as: :rails_markup_test_turbo

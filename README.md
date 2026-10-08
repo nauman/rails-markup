@@ -2,14 +2,16 @@
 
 Point-and-click annotation tool for Rails apps. Click any element, describe what needs to change, and your AI agent reads and acts on your feedback via MCP.
 
+Built with love in Sydney by [Nauman Tariq](https://nauman.one) and Pavelabs.
+
 **v1.0** — Author attribution, export, search, screenshots with drawing tools, kanban board, notification hooks.
 
 ## How it works
 
 1. **Install the gem** — adds migration, toolbar, auth controller, and routes
 2. **Open your app** — the annotation toolbar appears as a floating button
-3. **Click any element** — hover to highlight, click to annotate with screenshots
-4. **Draw on screenshots** — arrows, rectangles, highlights on captured elements
+3. **Click any element** — hover to highlight, click to annotate, optionally attach a screenshot
+4. **Draw on screenshots** — arrows, rectangles, highlights on attached images
 5. **Agent reads it** — AI calls `rails_markup_read` via MCP
 6. **Agent fixes it** — resolves the annotation and moves on
 
@@ -17,7 +19,7 @@ Point-and-click annotation tool for Rails apps. Click any element, describe what
 
 ```ruby
 # Gemfile
-gem "rails-markup", github: "nauman/rails-markup", require: "rails_markup"
+gem "rails-markup", require: "rails_markup"
 ```
 
 ```bash
@@ -156,7 +158,7 @@ RailsMarkup.configure do |config|
   config.toolbar_position = "bl"
   config.toolbar_size = "default"
 
-  # Element screenshots (default: true)
+  # Optional image attachments (default: true)
   config.enable_screenshots = true
 
   # Dashboard pagination (default: 25)
@@ -174,7 +176,7 @@ Visit `/admin/rails-markup` for the full dashboard:
 - **List view** — status filters, search, author filter, load-more pagination
 - **Board view** — kanban with drag-and-drop status transitions
 - **Export** — CSV and JSON downloads (respects current filters)
-- **Detail panel** — full content, metadata, screenshots, thread
+- **Shared feedback modal** — list and board open the same full content, context, images and thread; Escape, Close or the backdrop returns to your current view
 - **Bulk actions** — dismiss all pending/acknowledged
 
 ### Search & Filters
@@ -184,14 +186,18 @@ Visit `/admin/rails-markup` for the full dashboard:
 - **Page URL filter** — filter by annotated page
 - **Status pills** — pending, acknowledged, resolved, dismissed
 
+Open **Options** for page/author filters, exports and the **Floating toolbar** switch. This browser preference hides or shows the entire floating control group and syncs across open tabs. Board help lives under the info icon; each card's **Move** disclosure provides a touch-friendly alternative to dragging.
+
 ## Screenshots & Drawing
 
-When you click an element, the toolbar captures a screenshot using SVG foreignObject. Before submitting, you can draw on it:
+After selecting an element, choose **Capture tab** to use the browser screen-sharing picker, **Upload image** (PNG, JPEG, or WebP under 5 MB), or paste an image into the feedback field. Native capture requires browser support and permission each time; the video stream stops immediately after a single frame is captured. No image is submitted until you submit the feedback. Preview or remove an attachment before submitting, and draw on it:
 
 - **Arrow** — click and drag to draw red arrows
 - **Rectangle** — click and drag for red outline boxes
 - **Highlight** — freehand semi-transparent yellow strokes
 - **Undo** — remove the last drawing operation
+
+The engine dashboard’s **Floating toolbar** switch shows or hides the entire dock for this browser, including across open tabs. Pins and synchronization remain active.
 
 Screenshots are stored as base64 in annotation metadata and displayed in the dashboard detail view.
 
@@ -320,8 +326,29 @@ Browser Toolbar                    AI Agent (Claude Code, Cursor)
 ```bash
 git clone https://github.com/nauman/rails-markup
 cd rails-markup && bundle install
-bundle exec ruby -Ilib:test test/**/*_test.rb
+bundle exec rake test
+node --test test/javascript/*_test.mjs
+bundle exec rake test:system # requires Chrome
 ```
+
+### Local demo
+
+Run the included host app with the gem loaded from this checkout:
+
+```bash
+bundle exec ruby script/demo
+```
+
+Open [the demo login](http://127.0.0.1:4317/rails_markup_test_session/new) and
+click **Authenticate**, then visit [the host page](http://127.0.0.1:4317/host).
+Click the floating button once to expand the tools, click it again to annotate,
+then click an element and add feedback. The same annotation appears in
+[the dashboard](http://127.0.0.1:4317/feedback); resolve it there and reload the
+host page to see the updated status and thread.
+
+The demo binds to loopback, uses a test-only login, enables CSRF protection,
+and keeps its SQLite database in `tmp/demo/annotations.sqlite3`. Set `PORT` to
+change the port. Stop with Ctrl-C; remove that database to reset demo data.
 
 ## License
 
