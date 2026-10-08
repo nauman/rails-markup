@@ -1,2 +1,2 @@
 import {Shot} from './Shot';
-export const Opening = () => <Shot step="01" title="Feedback, right where it belongs." caption="A Kuickr design experiment, running inside a Rails app." image="page" top={-110} />;
+export const Opening = () => <Shot step="01" title="Visual feedback for Rails apps." caption="Point to an element. Leave a comment. Keep the page context." image="page" top={-110} />;

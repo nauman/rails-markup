@@ -209,20 +209,32 @@ footer a:hover { text-decoration: underline; }
         <a href="#how">How it works</a>
         <a href="#demo">Try it</a>
         <a href="#features">Features</a>
-        <a href="https://kuickr.co/rails-markup/docs/start.html">Docs</a>
+        <a href="https://github.com/nauman/rails-markup#readme">Docs</a>
         <a href="https://github.com/nauman/rails-markup">GitHub</a>
       </nav>
     </header>
 
     <section class="hero">
       <p class="eyebrow">Rails engine · toolbar · MCP server · CLI</p>
+      <p class="section-sub"><a href="https://rubygems.org/gems/rails-markup/versions/1.5.0">Version 1.5.0</a> · Early stage · Used by our team across our projects</p>
       <h1>Point-and-click annotation for AI agents.</h1>
-      <p class="lede">Mark up your Rails views right in the browser. Your AI agent reads the feedback over MCP and fixes it in the code.</p>
+      <p class="lede">Mark up your Rails views right in the browser. Connect your AI agent over MCP to read the feedback, make changes in your code, and reply or update its status.</p>
       <div class="cta">
         <a class="btn btn-primary" href="#install">Get started</a>
         <a class="btn btn-ghost" href="https://github.com/nauman/rails-markup">View on GitHub</a>
       </div>
       <div class="install"><span class="prompt">$</span> <span>gem install rails-markup</span></div>
+    </section>
+
+    <section id="walkthrough">
+      <div class="section-head">
+        <h2>See the workflow</h2>
+        <p class="section-sub">A 38-second captioned walkthrough using a Kuickr design experiment in a local Rails app: leave feedback, attach an image, then review it in the list or board.</p>
+      </div>
+      <video controls playsinline preload="metadata" aria-label="Rails Markup 1.5.0 captioned walkthrough" style="display:block;width:100%;height:auto;border-radius:12px;background:#0a0d13">
+        <source src="assets/rails-markup-1.5.0.mp4" type="video/mp4">
+        <a href="assets/rails-markup-1.5.0.mp4">Download the walkthrough</a>
+      </video>
     </section>
 
     <section id="how">
@@ -240,7 +252,7 @@ footer a:hover { text-decoration: underline; }
     <section id="demo">
       <div class="section-head">
         <h2>Try it</h2>
-        <p class="section-sub">A live mock of the toolbar. Click the green button, then click any element in the frame to leave an annotation — exactly how it works in your app.</p>
+        <p class="section-sub">A live mock of the toolbar. Click the green button, then click any element in the frame to leave an annotation — a simplified illustration. Watch the walkthrough above to see the current interface.</p>
       </div>
       <div class="demo-frame">
         <div class="demo-chrome">
@@ -278,11 +290,11 @@ footer a:hover { text-decoration: underline; }
       </div>
       <div class="grid">
         <div class="card"><span class="kind" style="background:var(--accent-wash);color:var(--np-focus)">Toolbar</span><h3>Floating annotation UI</h3><p>Zero-dependency overlay — no Stimulus, no importmap. Configurable FAB (show/hide, size, 4 corners) that works in any Rails app.</p></div>
-        <div class="card"><span class="kind" style="background:#eef4ff;color:var(--kind-decision)">Dashboard</span><h3>Mounted engine interface</h3><p>A list dashboard with filters, search, author &amp; page filters, load-more, CSV/JSON export — plus a drag-and-drop Kanban board.</p></div>
-        <div class="card"><span class="kind" style="background:#f4efff;color:var(--kind-question)">MCP</span><h3>Agent-native server</h3><p>Read, watch, transition, reply, and resolve annotations over stdio MCP. Works with Claude Code, Codex, and any MCP client.</p></div>
+        <div class="card"><span class="kind" style="background:#eef4ff;color:var(--kind-decision)">Dashboard</span><h3>Mounted engine interface</h3><p>A compact list and drag-and-drop board share the same feedback modal. Search, filter, export, reply, and update status without losing your place.</p></div>
+        <div class="card"><span class="kind" style="background:#f4efff;color:var(--kind-question)">MCP</span><h3>Agent-native server</h3><p>Read feedback, acknowledge or resolve it, add replies, and dismiss it over stdio MCP. Configure it in Claude Code, Codex, or another stdio MCP client. The standard HTTP proxy uses polling; watch is available only with the in-memory server.</p></div>
         <div class="card"><span class="kind" style="background:#fff6e6;color:var(--kind-idea)">CLI</span><h3>Thor-based commands</h3><p><span class="inline-code">rails-markup</span> ships <span class="inline-code">server</span>, <span class="inline-code">init</span>, <span class="inline-code">mcp</span>, <span class="inline-code">watch</span>, <span class="inline-code">pending</span>, <span class="inline-code">resolve</span>, and more.</p></div>
         <div class="card"><span class="kind" style="background:#e9f7ef;color:var(--kind-outcome)">Sync</span><h3>Server-backed state</h3><p>Client UUIDs, an outbox with retries, and reconciliation keep the browser, the database, and your agent converged.</p></div>
-        <div class="card"><span class="kind" style="background:var(--accent-wash);color:var(--np-focus)">Portable</span><h3>SQLite · MySQL · Postgres</h3><p>Adapter-aware migrations and a configurable table name. Auth is enforced through your host app's controller.</p></div>
+        <div class="card"><span class="kind" style="background:var(--accent-wash);color:var(--np-focus)">Portable</span><h3>SQLite · MySQL · Postgres</h3><p>Adapter-aware migrations and a configurable table name. Protect the dashboard through your host app's controller. The external MCP API uses a separate bearer token in production; development skips token authentication by default.</p></div>
       </div>
     </section>
 
@@ -299,7 +311,7 @@ footer a:hover { text-decoration: underline; }
       <div class="tbl-wrap">
         <table>
           <tr><th>Option</th><th>Values</th><th>What it does</th></tr>
-          <tr><td><code>fab_visible</code></td><td>true / false</td><td>Show or hide the floating button (pins &amp; panel stay).</td></tr>
+          <tr><td><code>fab_visible</code></td><td>true / false</td><td>Show or hide the entire floating dock. Pins and synchronization stay active; restore it from dashboard Options.</td></tr>
           <tr><td><code>toolbar_enabled</code></td><td>true / false</td><td>Master switch for the whole toolbar system.</td></tr>
           <tr><td><code>toolbar_position</code></td><td>bl / br / tl / tr</td><td>Which corner the FAB sits in.</td></tr>
           <tr><td><code>toolbar_size</code></td><td>slim / compact / default</td><td>32 / 36 / 40px button.</td></tr>
@@ -311,9 +323,9 @@ footer a:hover { text-decoration: underline; }
 
     <footer>
       <div class="row">
-        <span>rails-markup — MIT licensed.</span>
+        <span>rails-markup · MIT licensed · Built with love in Sydney by <a href="https://nauman.one">Nauman Tariq</a> and Pavelabs.</span>
         <span>
-          <a href="https://kuickr.co/rails-markup/docs/start.html">Docs</a> ·
+          <a href="https://github.com/nauman/rails-markup#readme">Docs</a> ·
           <a href="https://rubygems.org/gems/rails-markup">RubyGems</a> ·
           <a href="https://github.com/nauman/rails-markup">GitHub</a> ·
           <a href="https://github.com/nauman/rails-markup/blob/main/CHANGELOG.md">Changelog</a>
