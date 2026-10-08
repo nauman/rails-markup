@@ -6,6 +6,7 @@ import {Review} from './Review';
 import {Acknowledged} from './Acknowledged';
 import {Closing} from './Closing';
 import {Board} from './Board';
+import {DrawingDemo} from './DrawingDemo';
 export const Walkthrough = () => <Series>
  <Series.Sequence name="Opening" durationInFrames={120}><Opening /></Series.Sequence>
  <Series.Sequence name="Comment" durationInFrames={180}><Comment /></Series.Sequence>
@@ -16,6 +17,7 @@ export const Walkthrough = () => <Series>
  <Series.Sequence name="Closing" durationInFrames={120}><Closing /></Series.Sequence>
 </Series>;
 export const RemotionRoot = () => <>
+ <Composition id="RailsMarkupDrawing" component={DrawingDemo} width={900} height={900} fps={30} durationInFrames={540} />
  <Composition id="RailsMarkupDemo" component={Walkthrough} width={1920} height={1080} fps={30} durationInFrames={1140} />
  <Folder name="Scenes">
  <Composition id="Opening" component={Opening} width={1920} height={1080} fps={30} durationInFrames={120} />
