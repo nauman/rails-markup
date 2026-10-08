@@ -180,6 +180,20 @@ footer a:hover { text-decoration: underline; }
   .navlinks { gap: var(--r-3); }
   .hero { padding: var(--r-6) 0 var(--r-5); }
 }
+
+/* Product captures: compact native disclosures, with full-size image links. */
+.shots { border: 1px solid var(--np-paper-edge); border-radius: var(--rad-4); overflow: hidden; background: var(--np-bg); }
+.shot + .shot { border-top: 1px solid var(--np-paper-edge); }
+.shot summary { padding: 16px 20px; cursor: pointer; display: flex; align-items: center; gap: 12px; color: var(--np-ink-runtime); font-size: 15px; list-style: none; }
+.shot summary::-webkit-details-marker { display: none; }
+.shot summary::after { content: "+"; margin-left: auto; color: var(--np-focus); font-size: 20px; }
+.shot[open] summary::after { content: "−"; }
+.shot summary:focus-visible { outline: 2px solid var(--np-focus); outline-offset: -4px; }
+.shot-number { font-family: var(--np-mono); color: var(--np-muted); font-size: 12px; }
+.shot figure { margin: 0; padding: 0 12px 14px; }
+.shot img { display: block; width: 100%; height: auto; border: 1px solid var(--np-paper-edge); border-radius: var(--rad-2); }
+.shot figcaption { padding: 12px 8px 0; font-size: 13px; line-height: 1.6; color: var(--np-muted); }
+.shot figcaption a { color: var(--np-focus); white-space: nowrap; }
   </style>
 </head>
 <body class="np-tokens np-wash" data-density="comfortable" data-font-size="m">
@@ -192,6 +206,7 @@ footer a:hover { text-decoration: underline; }
       </span>
       <nav class="navlinks">
         <a href="#how">How it works</a>
+        <a href="#screenshots">Screenshots</a>
         <a href="#walkthrough">Watch demo</a>
         <a href="#features">Features</a>
         <a href="https://github.com/nauman/rails-markup#readme">Docs</a>
@@ -209,6 +224,51 @@ footer a:hover { text-decoration: underline; }
         <a class="btn btn-ghost" href="https://github.com/nauman/rails-markup">View on GitHub</a>
       </div>
       <div class="install"><span class="prompt">$</span> <span>gem install rails-markup</span></div>
+    </section>
+
+    <section id="screenshots">
+      <div class="section-head">
+        <h2>Inside the app</h2>
+        <p class="section-sub">Real captures from the Rails demo. Expand a step to see how feedback moves from the page to your dashboard.</p>
+      </div>
+      <div class="shots">
+        <details class="shot" name="product-shots" open>
+          <summary><span class="shot-number">01</span><span>Toolbar · Point to what needs changing</span></summary>
+          <figure>
+            <a href="assets/screenshots/toolbar.jpg" target="_blank" rel="noopener" aria-label="Open screenshot 01 at full size">
+              <img src="assets/screenshots/toolbar.jpg" width="1440" height="900" loading="lazy" decoding="async" alt="Rails Markup toolbar expanded on a Kuickr page, with an element selected and its feedback form open.">
+            </a>
+            <figcaption>Select an element and leave a comment. The floating toolbar stays on your app. <a href="assets/screenshots/toolbar.jpg" target="_blank" rel="noopener">View full size ↗</a></figcaption>
+          </figure>
+        </details>
+        <details class="shot" name="product-shots">
+          <summary><span class="shot-number">02</span><span>List · See what needs attention</span></summary>
+          <figure>
+            <a href="assets/screenshots/dashboard-list.png" target="_blank" rel="noopener" aria-label="Open screenshot 02 at full size">
+              <img src="assets/screenshots/dashboard-list.png" width="1280" height="720" loading="lazy" decoding="async" alt="Compact feedback dashboard with counted status filters, search, Options and three feedback rows.">
+            </a>
+            <figcaption>Review feedback across pages, filter by status, and open a row to act on it. <a href="assets/screenshots/dashboard-list.png" target="_blank" rel="noopener">View full size ↗</a></figcaption>
+          </figure>
+        </details>
+        <details class="shot" name="product-shots">
+          <summary><span class="shot-number">03</span><span>Board · Follow feedback through its status</span></summary>
+          <figure>
+            <a href="assets/screenshots/dashboard-board.jpg" target="_blank" rel="noopener" aria-label="Open screenshot 03 at full size">
+              <img src="assets/screenshots/dashboard-board.jpg" width="1280" height="720" loading="lazy" decoding="async" alt="Feedback board with Pending, Acknowledged, Resolved and Dismissed columns, and contextual Move controls.">
+            </a>
+            <figcaption>Use the board to follow pending and acknowledged feedback. Move controls expand when needed. <a href="assets/screenshots/dashboard-board.jpg" target="_blank" rel="noopener">View full size ↗</a></figcaption>
+          </figure>
+        </details>
+        <details class="shot" name="product-shots">
+          <summary><span class="shot-number">04</span><span>Feedback · Review the image and take action</span></summary>
+          <figure>
+            <a href="assets/screenshots/feedback-modal.jpg" target="_blank" rel="noopener" aria-label="Open screenshot 04 at full size">
+              <img src="assets/screenshots/feedback-modal.jpg" width="1280" height="720" loading="lazy" decoding="async" alt="Feedback modal containing the original comment, attached screenshot, Acknowledge, Resolve and Dismiss actions, and a reply disclosure.">
+            </a>
+            <figcaption>List and board open the same modal. Review the image, reply, acknowledge or resolve, then return to your view. <a href="assets/screenshots/feedback-modal.jpg" target="_blank" rel="noopener">View full size ↗</a></figcaption>
+          </figure>
+        </details>
+      </div>
     </section>
 
     <section id="walkthrough">
